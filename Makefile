@@ -8,7 +8,7 @@ plugins: $(addprefix bundles/fluxion-,$(PLUGINS))
 bundles/fluxion: $(SOURCES)
 	go build -o $@
 
-bundles/fluxion-%: plugin/%
+bundles/fluxion-%: plugin/% $(SOURCES)
 	cd $<; go build -o ../../$@
 
 .PHONY: all plugins
