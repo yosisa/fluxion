@@ -5,10 +5,12 @@ import (
 	"log"
 
 	"github.com/BurntSushi/toml"
+	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/engine"
 )
 
 var config struct {
+	Buffer []*buffer.Options
 	Input  []map[string]interface{}
 	Output []map[string]interface{}
 }
@@ -23,6 +25,9 @@ func main() {
 	}
 
 	eng := engine.New()
+	for _, bopts := range config.Buffer {
+		eng.RegisterBuffer(bopts)
+	}
 	for _, conf := range config.Input {
 		eng.RegisterInputPlugin(conf)
 	}

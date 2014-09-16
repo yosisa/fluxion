@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/engine"
 	"github.com/yosisa/fluxion/event"
 )
@@ -18,7 +19,8 @@ type Plugin interface {
 
 type OutputPlugin interface {
 	Plugin
-	HandleRecord(*event.Record) error
+	Encode(*event.Record) (buffer.Sizer, error)
+	Write([]buffer.Sizer) (int, error)
 }
 
 type plugin struct {
@@ -36,6 +38,7 @@ func (p *plugin) Run() {
 func (p *plugin) eventListener() {
 	dec := event.NewDecoder(os.Stdin)
 	op, isOutputPlugin := p.p.(OutputPlugin)
+	var buf *buffer.Memory
 
 	for {
 		var ev event.Event
@@ -48,6 +51,10 @@ func (p *plugin) eventListener() {
 		}
 
 		switch ev.Name {
+		case "set_buffer":
+			if isOutputPlugin {
+				buf = buffer.NewMemory(ev.Buffer, op)
+			}
 		case "config":
 			b := ev.Payload.([]byte)
 			f := func(v interface{}) error {
@@ -62,7 +69,11 @@ func (p *plugin) eventListener() {
 			}
 		case "record":
 			if isOutputPlugin {
-				if err := op.HandleRecord(ev.Record); err != nil {
+				s, err := op.Encode(ev.Record)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if err = buf.Push(s); err != nil {
 					log.Fatal(err)
 				}
 			}

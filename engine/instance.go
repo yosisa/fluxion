@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/pave/process"
 )
@@ -13,10 +14,11 @@ type Instance struct {
 	enc  event.Encoder
 	dec  event.Decoder
 	conf map[string]interface{}
+	buf  *buffer.Options
 }
 
-func NewInstance(eng *Engine, cmd *process.Command, conf map[string]interface{}) *Instance {
-	i := &Instance{eng: eng, conf: conf}
+func NewInstance(eng *Engine, cmd *process.Command, conf map[string]interface{}, buf *buffer.Options) *Instance {
+	i := &Instance{eng: eng, conf: conf, buf: buf}
 	cmd.PrepareFunc = func(cmd *exec.Cmd) {
 		cmd.Stderr = os.Stderr
 		w, _ := cmd.StdinPipe()
@@ -41,8 +43,12 @@ func (i *Instance) eventLoop() {
 	}
 }
 
+func (i *Instance) SetBuffer() error {
+	ev := &event.Event{Name: "set_buffer", Buffer: i.buf}
+	return i.enc.Encode(ev)
+}
+
 func (i *Instance) Configure() error {
-	go i.eventLoop()
 	b, err := Encode(i.conf)
 	if err != nil {
 		return err
@@ -52,6 +58,7 @@ func (i *Instance) Configure() error {
 }
 
 func (i *Instance) Start() error {
+	go i.eventLoop()
 	ev := &event.Event{Name: "start"}
 	return i.enc.Encode(ev)
 }
