@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -12,7 +14,7 @@ import (
 	"github.com/yosisa/fluxion/plugin"
 )
 
-var mh = &codec.MsgpackHandle{}
+var mh = &codec.MsgpackHandle{RawToString: true}
 
 type Config struct {
 	Bind string `codec:"bind"`
@@ -74,10 +76,10 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 			return
 		}
 
-		tag := string(v[0].([]byte))
+		tag := v[0].(string)
 		switch len(v) {
 		case 2:
-			dec2 := codec.NewDecoderBytes(v[1].([]byte), mh)
+			dec2 := codec.NewDecoderBytes([]byte(v[1].(string)), mh)
 			for {
 				var v2 []interface{}
 				if err := dec2.Decode(&v2); err != nil {
@@ -87,12 +89,18 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 					break
 				}
 
-				t := time.Unix(int64(v2[0].(uint64)), 0)
+				t, err := parseTime(v2[0])
+				if err != nil {
+					continue
+				}
 				r := event.NewRecordWithTime(tag, t, v2[1])
 				plugin.Emit(r)
 			}
 		case 3:
-			t := time.Unix(int64(v[1].(uint64)), 0)
+			t, err := parseTime(v[1])
+			if err != nil {
+				continue
+			}
 			r := event.NewRecordWithTime(tag, t, v[2])
 			plugin.Emit(r)
 		}
@@ -109,6 +117,24 @@ func (i *ForwardInput) heartbeatHandler() {
 		}
 		i.udpConn.WriteToUDP(res, remote)
 	}
+}
+
+func parseTime(v interface{}) (t time.Time, err error) {
+	var n int64
+	switch typed := v.(type) {
+	case int64:
+		n = typed
+	case uint64:
+		n = int64(typed)
+	case float64:
+		n = int64(typed)
+	default:
+		if n, err = strconv.ParseInt(fmt.Sprintf("%v", typed), 10, 64); err != nil {
+			return
+		}
+	}
+	t = time.Unix(n, 0)
+	return
 }
 
 func main() {
