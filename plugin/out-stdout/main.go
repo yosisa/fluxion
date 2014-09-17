@@ -22,7 +22,7 @@ func (o *StdoutOutput) Start() error {
 }
 
 func (o *StdoutOutput) Encode(r *event.Record) (buffer.Sizer, error) {
-	return buffer.StringItem(fmt.Sprintf("[%s] %v: %s\n", r.Tag, r.Time, r.Value)), nil
+	return buffer.StringItem(fmt.Sprintf("[%s] %v: %v\n", r.Tag, r.Time, r.Value)), nil
 }
 
 func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
