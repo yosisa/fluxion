@@ -2,8 +2,6 @@ package main
 
 import (
 	"io"
-	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -72,12 +70,12 @@ func (i *TailInput) Start() error {
 		for {
 			select {
 			case ev := <-watcher.Events:
-				log.Print(ev)
+				plugin.Log.Debug(ev)
 				if err = i.Scan(); err != nil {
-					log.Print(err)
+					plugin.Log.Warning(err)
 				}
 			case err := <-watcher.Errors:
-				log.Print(err)
+				plugin.Log.Warning(err)
 			case <-tick:
 				i.Scan()
 			}
@@ -106,7 +104,7 @@ func (i *TailInput) Scan() error {
 	defer i.m.Unlock()
 
 	if !i.rotating && i.pe.IsRotated() {
-		log.Printf("Rotation detected: %s", i.pe.Path)
+		plugin.Log.Infof("Rotation detected: %s", i.pe.Path)
 		var wait time.Duration
 		if i.r != nil {
 			wait = 5 * time.Second
@@ -152,6 +150,5 @@ func (i *TailInput) Scan() error {
 }
 
 func main() {
-	log.SetOutput(os.Stderr)
 	plugin.New(&TailInput{}).Run()
 }

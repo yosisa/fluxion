@@ -3,9 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"os"
 	"strconv"
 	"time"
 
@@ -71,7 +69,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 		err := dec.Decode(&v)
 		if err != nil {
 			if err != io.EOF {
-				log.Print(err)
+				plugin.Log.Warning(err)
 			}
 			return
 		}
@@ -84,7 +82,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				var v2 []interface{}
 				if err := dec2.Decode(&v2); err != nil {
 					if err != io.EOF {
-						log.Print(err)
+						plugin.Log.Warning(err)
 					}
 					break
 				}
@@ -113,7 +111,8 @@ func (i *ForwardInput) heartbeatHandler() {
 	for {
 		_, remote, err := i.udpConn.ReadFromUDP(buf)
 		if err != nil {
-			log.Fatal(err)
+			plugin.Log.Warning(err)
+			continue
 		}
 		i.udpConn.WriteToUDP(res, remote)
 	}
@@ -146,6 +145,5 @@ func parseValue(v interface{}) map[string]interface{} {
 }
 
 func main() {
-	log.SetOutput(os.Stderr)
 	plugin.New(&ForwardInput{}).Run()
 }

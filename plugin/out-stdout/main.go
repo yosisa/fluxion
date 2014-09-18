@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/yosisa/fluxion/buffer"
@@ -27,12 +26,11 @@ func (o *StdoutOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 
 func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
 	for _, s := range l {
-		log.Print(s.(buffer.StringItem))
+		fmt.Fprint(os.Stderr, s.(buffer.StringItem))
 	}
 	return len(l), nil
 }
 
 func main() {
-	log.SetOutput(os.Stderr)
 	plugin.New(&StdoutOutput{}).Run()
 }

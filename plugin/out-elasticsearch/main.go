@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
@@ -117,6 +115,5 @@ func (o *ElasticsearchOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	log.SetOutput(os.Stderr)
 	plugin.New(&ElasticsearchOutput{}).Run()
 }

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"log"
 	"net"
-	"os"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -64,6 +62,5 @@ func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	log.SetOutput(os.Stderr)
 	plugin.New(&ForwardOutput{}).Run()
 }
