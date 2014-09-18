@@ -1,9 +1,10 @@
 package plugin
 
 import (
+	"fmt"
 	"io"
-	"log"
 	"os"
+	"strings"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/engine"
@@ -33,10 +34,13 @@ type plugin struct {
 }
 
 func New(p Plugin) *plugin {
+	Log.Name = strings.SplitN(os.Args[0], "-", 2)[1]
+	Log.Prefix = fmt.Sprintf("[%s] ", Log.Name)
 	return &plugin{p: p}
 }
 
 func (p *plugin) Run() {
+	Log.Infof("Plugin started")
 	p.eventListener()
 }
 
@@ -52,7 +56,8 @@ func (p *plugin) eventListener() {
 			if err == io.EOF {
 				return
 			} else {
-				log.Fatal(err)
+				Log.Warning(err)
+				continue
 			}
 		}
 
@@ -67,30 +72,32 @@ func (p *plugin) eventListener() {
 				return engine.Decode(b, v)
 			}
 			if err := p.p.Init(f); err != nil {
-				log.Fatal(err)
+				Log.Fatal("Failed to configure: ", err)
 			}
 		case "start":
 			if err := p.p.Start(); err != nil {
-				log.Fatal(err)
+				Log.Fatal("Failed to start: ", err)
 			}
 		case "record":
 			switch {
 			case isFilterPlugin:
 				r, err := fp.Filter(ev.Record)
 				if err != nil {
-					log.Fatal(err)
+					Log.Warning("Filter error: ", err)
+					continue
 				}
 				ev := &event.Event{Name: "next_filter", Record: r}
 				if err = encoder.Encode(ev); err != nil {
-					log.Fatal(err)
+					Log.Warning("Failed to transmit record: ", err)
 				}
 			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
-					log.Fatal(err)
+					Log.Warning("Encode error: ", err)
+					continue
 				}
 				if err = buf.Push(s); err != nil {
-					log.Fatal(err)
+					Log.Warning("Buffering error: ", err)
 				}
 			}
 		}
