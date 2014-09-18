@@ -23,6 +23,11 @@ type OutputPlugin interface {
 	Write([]buffer.Sizer) (int, error)
 }
 
+type FilterPlugin interface {
+	Plugin
+	Filter(*event.Record) (*event.Record, error)
+}
+
 type plugin struct {
 	p Plugin
 }
@@ -38,6 +43,7 @@ func (p *plugin) Run() {
 func (p *plugin) eventListener() {
 	dec := event.NewDecoder(os.Stdin)
 	op, isOutputPlugin := p.p.(OutputPlugin)
+	fp, isFilterPlugin := p.p.(FilterPlugin)
 	var buf *buffer.Memory
 
 	for {
@@ -68,7 +74,17 @@ func (p *plugin) eventListener() {
 				log.Fatal(err)
 			}
 		case "record":
-			if isOutputPlugin {
+			switch {
+			case isFilterPlugin:
+				r, err := fp.Filter(ev.Record)
+				if err != nil {
+					log.Fatal(err)
+				}
+				ev := &event.Event{Name: "next_filter", Record: r}
+				if err = encoder.Encode(ev); err != nil {
+					log.Fatal(err)
+				}
+			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
 					log.Fatal(err)

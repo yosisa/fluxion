@@ -10,15 +10,16 @@ import (
 )
 
 type Instance struct {
-	eng  *Engine
-	enc  event.Encoder
-	dec  event.Decoder
-	conf map[string]interface{}
-	buf  *buffer.Options
+	eng    *Engine
+	enc    event.Encoder
+	dec    event.Decoder
+	conf   map[string]interface{}
+	buf    *buffer.Options
+	Router *TagRouter
 }
 
 func NewInstance(eng *Engine, cmd *process.Command, conf map[string]interface{}, buf *buffer.Options) *Instance {
-	i := &Instance{eng: eng, conf: conf, buf: buf}
+	i := &Instance{eng: eng, conf: conf, buf: buf, Router: &TagRouter{}}
 	cmd.PrepareFunc = func(cmd *exec.Cmd) {
 		cmd.Stderr = os.Stderr
 		w, _ := cmd.StdinPipe()
@@ -38,7 +39,13 @@ func (i *Instance) eventLoop() {
 
 		switch ev.Name {
 		case "record":
-			i.eng.Emit(ev.Record)
+			i.eng.Filter(ev.Record)
+		case "next_filter":
+			if ins := i.Router.Route(ev.Record.Tag); ins != nil {
+				ins.Emit(ev.Record)
+			} else {
+				i.eng.Emit(ev.Record)
+			}
 		}
 	}
 }

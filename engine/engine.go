@@ -14,14 +14,17 @@ import (
 type Engine struct {
 	pm      *process.ProcessManager
 	plugins []*Instance
+	fps     []*Instance
 	tr      *TagRouter
+	ftr     *TagRouter
 	bufs    map[string]*buffer.Options
 }
 
 func New() *Engine {
 	return &Engine{
-		pm: process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
-		tr: &TagRouter{},
+		pm:  process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
+		tr:  &TagRouter{},
+		ftr: &TagRouter{},
 		bufs: map[string]*buffer.Options{
 			"default": buffer.DefaultOptions,
 		},
@@ -58,6 +61,36 @@ func (e *Engine) RegisterOutputPlugin(conf map[string]interface{}) error {
 	}
 	e.pm.Add(cmd)
 	return nil
+}
+
+func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) {
+	command := "fluxion-filter-" + conf["type"].(string)
+	cmd := process.NewCommand(command)
+	ins := NewInstance(e, cmd, conf, nil)
+
+	pattern := conf["match"].(string)
+	if err := e.ftr.Add(pattern, ins); err != nil {
+		log.Fatal(err)
+	}
+
+	// Register new filter to the preceding filters
+	for _, fp := range e.fps {
+		if err := fp.Router.Add(pattern, ins); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	e.plugins = append(e.plugins, ins)
+	e.fps = append(e.fps, ins)
+	e.pm.Add(cmd)
+}
+
+func (e *Engine) Filter(record *event.Record) {
+	if ins := e.ftr.Route(record.Tag); ins != nil {
+		ins.Emit(record)
+	} else {
+		e.Emit(record)
+	}
 }
 
 func (e *Engine) Emit(record *event.Record) {

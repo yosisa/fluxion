@@ -12,6 +12,7 @@ import (
 var config struct {
 	Buffer []*buffer.Options
 	Input  []map[string]interface{}
+	Filter []map[string]interface{}
 	Output []map[string]interface{}
 }
 
@@ -30,6 +31,9 @@ func main() {
 	}
 	for _, conf := range config.Input {
 		eng.RegisterInputPlugin(conf)
+	}
+	for _, conf := range config.Filter {
+		eng.RegisterFilterPlugin(conf)
 	}
 	for _, conf := range config.Output {
 		eng.RegisterOutputPlugin(conf)
