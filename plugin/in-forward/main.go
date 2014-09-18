@@ -93,7 +93,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				if err != nil {
 					continue
 				}
-				r := event.NewRecordWithTime(tag, t, v2[1])
+				r := event.NewRecordWithTime(tag, t, parseValue(v2[1]))
 				plugin.Emit(r)
 			}
 		case 3:
@@ -101,7 +101,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 			if err != nil {
 				continue
 			}
-			r := event.NewRecordWithTime(tag, t, v[2])
+			r := event.NewRecordWithTime(tag, t, parseValue(v[2]))
 			plugin.Emit(r)
 		}
 	}
@@ -135,6 +135,14 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	}
 	t = time.Unix(n, 0)
 	return
+}
+
+func parseValue(v interface{}) map[string]interface{} {
+	r := make(map[string]interface{})
+	for key, val := range v.(map[interface{}]interface{}) {
+		r[key.(string)] = val
+	}
+	return r
 }
 
 func main() {
