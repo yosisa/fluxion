@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/engine"
@@ -87,9 +88,11 @@ func (p *plugin) eventListener() {
 					continue
 				}
 				ev := &event.Event{Name: "next_filter", Record: r}
+				mutex.Lock()
 				if err = encoder.Encode(ev); err != nil {
 					Log.Warning("Failed to transmit record: ", err)
 				}
+				mutex.Unlock()
 			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
@@ -105,8 +108,11 @@ func (p *plugin) eventListener() {
 }
 
 var encoder = event.NewEncoder(os.Stdout)
+var mutex sync.Mutex
 
 func Emit(record *event.Record) error {
 	ev := &event.Event{Name: "record", Record: record}
+	mutex.Lock()
+	defer mutex.Unlock()
 	return encoder.Encode(ev)
 }
