@@ -62,5 +62,7 @@ func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(&ForwardOutput{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &ForwardOutput{}
+	}).Run()
 }

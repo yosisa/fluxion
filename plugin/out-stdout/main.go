@@ -32,5 +32,7 @@ func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(&StdoutOutput{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &StdoutOutput{}
+	}).Run()
 }

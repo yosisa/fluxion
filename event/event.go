@@ -10,6 +10,7 @@ import (
 var mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}
 
 type Event struct {
+	UnitID  int32           `codec:"unit_id"`
 	Name    string          `codec:"name"`
 	Record  *Record         `codec:"record,omitempty"`
 	Buffer  *buffer.Options `codec:"buffer,omitempty"`

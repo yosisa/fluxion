@@ -57,5 +57,7 @@ func (f *JSFilter) Filter(r *event.Record) (*event.Record, error) {
 }
 
 func main() {
-	plugin.New(&JSFilter{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &JSFilter{}
+	}).Run()
 }

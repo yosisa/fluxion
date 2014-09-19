@@ -115,5 +115,7 @@ func (o *ElasticsearchOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(&ElasticsearchOutput{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &ElasticsearchOutput{}
+	}).Run()
 }

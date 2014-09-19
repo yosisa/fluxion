@@ -14,6 +14,8 @@ import (
 
 type ConfigFeeder func(interface{}) error
 
+type PluginFactory func() Plugin
+
 type Plugin interface {
 	Init(ConfigFeeder) error
 	Start() error
@@ -31,26 +33,26 @@ type FilterPlugin interface {
 }
 
 type plugin struct {
-	p Plugin
+	f     PluginFactory
+	units map[int32]*execUnit
 }
 
-func New(p Plugin) *plugin {
+func New(f PluginFactory) *plugin {
 	Log.Name = strings.SplitN(os.Args[0], "-", 2)[1]
 	Log.Prefix = fmt.Sprintf("[%s] ", Log.Name)
-	return &plugin{p: p}
+	return &plugin{
+		f:     f,
+		units: make(map[int32]*execUnit),
+	}
 }
 
 func (p *plugin) Run() {
-	Log.Infof("Plugin started")
+	Log.Infof("Plugin created")
 	p.eventListener()
 }
 
 func (p *plugin) eventListener() {
 	dec := event.NewDecoder(os.Stdin)
-	op, isOutputPlugin := p.p.(OutputPlugin)
-	fp, isFilterPlugin := p.p.(FilterPlugin)
-	var buf *buffer.Memory
-
 	for {
 		var ev event.Event
 		if err := dec.Decode(&ev); err != nil {
@@ -62,6 +64,37 @@ func (p *plugin) eventListener() {
 			}
 		}
 
+		unit, ok := p.units[ev.UnitID]
+		if !ok {
+			unit = newExecUnit(ev.UnitID, p.f())
+			p.units[ev.UnitID] = unit
+		}
+		unit.eventCh <- &ev
+	}
+}
+
+type execUnit struct {
+	ID      int32
+	p       Plugin
+	eventCh chan *event.Event
+}
+
+func newExecUnit(id int32, p Plugin) *execUnit {
+	u := &execUnit{
+		ID:      id,
+		p:       p,
+		eventCh: make(chan *event.Event, 100),
+	}
+	go u.eventLoop()
+	return u
+}
+
+func (u *execUnit) eventLoop() {
+	op, isOutputPlugin := u.p.(OutputPlugin)
+	fp, isFilterPlugin := u.p.(FilterPlugin)
+	var buf *buffer.Memory
+
+	for ev := range u.eventCh {
 		switch ev.Name {
 		case "set_buffer":
 			if isOutputPlugin {
@@ -72,11 +105,11 @@ func (p *plugin) eventListener() {
 			f := func(v interface{}) error {
 				return engine.Decode(b, v)
 			}
-			if err := p.p.Init(f); err != nil {
+			if err := u.p.Init(f); err != nil {
 				Log.Fatal("Failed to configure: ", err)
 			}
 		case "start":
-			if err := p.p.Start(); err != nil {
+			if err := u.p.Start(); err != nil {
 				Log.Fatal("Failed to start: ", err)
 			}
 		case "record":
@@ -87,7 +120,7 @@ func (p *plugin) eventListener() {
 					Log.Warning("Filter error: ", err)
 					continue
 				}
-				ev := &event.Event{Name: "next_filter", Record: r}
+				ev := &event.Event{UnitID: u.ID, Name: "next_filter", Record: r}
 				mutex.Lock()
 				if err = encoder.Encode(ev); err != nil {
 					Log.Warning("Failed to transmit record: ", err)

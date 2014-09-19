@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
+	"sync/atomic"
 
 	"time"
 
@@ -13,18 +14,21 @@ import (
 
 type Engine struct {
 	pm      *process.ProcessManager
-	plugins []*Instance
-	fps     []*Instance
+	plugins map[string]*Instance
+	units   []*ExecUnit
+	filters []*ExecUnit
 	tr      *TagRouter
 	ftr     *TagRouter
 	bufs    map[string]*buffer.Options
+	unitID  int32
 }
 
 func New() *Engine {
 	return &Engine{
-		pm:  process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
-		tr:  &TagRouter{},
-		ftr: &TagRouter{},
+		pm:      process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
+		plugins: make(map[string]*Instance),
+		tr:      &TagRouter{},
+		ftr:     &TagRouter{},
 		bufs: map[string]*buffer.Options{
 			"default": buffer.DefaultOptions,
 		},
@@ -35,11 +39,26 @@ func (e *Engine) RegisterBuffer(opts *buffer.Options) {
 	e.bufs[opts.Name] = opts
 }
 
-func (e *Engine) RegisterInputPlugin(conf map[string]interface{}) {
-	command := "fluxion-in-" + conf["type"].(string)
+func (e *Engine) pluginInstance(command string) *Instance {
+	if ins, ok := e.plugins[command]; ok {
+		return ins
+	}
 	cmd := process.NewCommand(command)
-	e.plugins = append(e.plugins, NewInstance(e, cmd, conf, nil))
 	e.pm.Add(cmd)
+	ins := NewInstance(e, cmd)
+	e.plugins[command] = ins
+	return ins
+}
+
+func (e *Engine) addExecUnit(ins *Instance, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
+	unit := ins.AddExecUnit(atomic.AddInt32(&e.unitID, 1), conf, bopts)
+	e.units = append(e.units, unit)
+	return unit
+}
+
+func (e *Engine) RegisterInputPlugin(conf map[string]interface{}) {
+	ins := e.pluginInstance("fluxion-in-" + conf["type"].(string))
+	e.addExecUnit(ins, conf, nil)
 }
 
 func (e *Engine) RegisterOutputPlugin(conf map[string]interface{}) error {
@@ -52,37 +71,30 @@ func (e *Engine) RegisterOutputPlugin(conf map[string]interface{}) error {
 		return fmt.Errorf("No such buffer defined: %s", bufName)
 	}
 
-	command := "fluxion-out-" + conf["type"].(string)
-	cmd := process.NewCommand(command)
-	ins := NewInstance(e, cmd, conf, buf)
-	e.plugins = append(e.plugins, ins)
-	if err := e.tr.Add(conf["match"].(string), ins); err != nil {
+	ins := e.pluginInstance("fluxion-out-" + conf["type"].(string))
+	unit := e.addExecUnit(ins, conf, buf)
+	if err := e.tr.Add(conf["match"].(string), unit); err != nil {
 		log.Fatal(err)
 	}
-	e.pm.Add(cmd)
 	return nil
 }
 
 func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) {
-	command := "fluxion-filter-" + conf["type"].(string)
-	cmd := process.NewCommand(command)
-	ins := NewInstance(e, cmd, conf, nil)
+	ins := e.pluginInstance("fluxion-filter-" + conf["type"].(string))
+	unit := e.addExecUnit(ins, conf, nil)
 
 	pattern := conf["match"].(string)
-	if err := e.ftr.Add(pattern, ins); err != nil {
+	if err := e.ftr.Add(pattern, unit); err != nil {
 		log.Fatal(err)
 	}
 
 	// Register new filter to the preceding filters
-	for _, fp := range e.fps {
-		if err := fp.Router.Add(pattern, ins); err != nil {
+	for _, f := range e.filters {
+		if err := f.Router.Add(pattern, unit); err != nil {
 			log.Fatal(err)
 		}
 	}
-
-	e.plugins = append(e.plugins, ins)
-	e.fps = append(e.fps, ins)
-	e.pm.Add(cmd)
+	e.filters = append(e.filters, unit)
 }
 
 func (e *Engine) Filter(record *event.Record) {
@@ -103,14 +115,14 @@ func (e *Engine) Emit(record *event.Record) {
 
 func (e *Engine) Start() {
 	e.pm.Start()
-	for _, p := range e.plugins {
-		p.SetBuffer()
+	for _, u := range e.units {
+		u.SetBuffer()
 	}
-	for _, p := range e.plugins {
-		p.Configure()
+	for _, u := range e.units {
+		u.Configure()
 	}
-	for _, p := range e.plugins {
-		p.Start()
+	for _, u := range e.units {
+		u.Start()
 	}
 }
 

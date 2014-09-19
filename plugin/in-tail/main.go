@@ -150,5 +150,7 @@ func (i *TailInput) Scan() error {
 }
 
 func main() {
-	plugin.New(&TailInput{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &TailInput{}
+	}).Run()
 }

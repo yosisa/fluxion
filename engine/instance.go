@@ -12,25 +12,37 @@ import (
 )
 
 type Instance struct {
-	eng    *Engine
-	enc    event.Encoder
-	dec    event.Decoder
-	conf   map[string]interface{}
-	buf    *buffer.Options
-	Router *TagRouter
-	rbuf   *RingBuffer
+	eng   *Engine
+	dec   event.Decoder
+	rbuf  *RingBuffer
+	units map[int32]*ExecUnit
 }
 
-func NewInstance(eng *Engine, cmd *process.Command, conf map[string]interface{}, buf *buffer.Options) *Instance {
-	i := &Instance{eng: eng, conf: conf, buf: buf, Router: &TagRouter{}, rbuf: NewRingBuffer(1024)}
+func NewInstance(eng *Engine, cmd *process.Command) *Instance {
+	i := &Instance{eng: eng, rbuf: NewRingBuffer(1024), units: make(map[int32]*ExecUnit)}
 	cmd.PrepareFunc = func(cmd *exec.Cmd) {
 		cmd.Stderr = os.Stderr
 		w, _ := cmd.StdinPipe()
 		r, _ := cmd.StdoutPipe()
-		i.enc = event.NewEncoder(w)
+		enc := event.NewEncoder(w)
 		i.dec = event.NewDecoder(io.TeeReader(r, i.rbuf))
+		for _, u := range i.units {
+			u.enc = enc
+		}
+		go i.eventLoop()
 	}
 	return i
+}
+
+func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
+	unit := &ExecUnit{
+		ID:     id,
+		Router: &TagRouter{},
+		conf:   conf,
+		bopts:  bopts,
+	}
+	i.units[id] = unit
+	return unit
 }
 
 func (i *Instance) eventLoop() {
@@ -48,8 +60,14 @@ func (i *Instance) eventLoop() {
 		case "record":
 			i.eng.Filter(ev.Record)
 		case "next_filter":
-			if ins := i.Router.Route(ev.Record.Tag); ins != nil {
-				ins.Emit(ev.Record)
+			unit, ok := i.units[ev.UnitID]
+			if !ok {
+				log.Printf("Unit ID %d not known", ev.UnitID)
+				continue
+			}
+
+			if e := unit.Router.Route(ev.Record.Tag); e != nil {
+				e.Emit(ev.Record)
 			} else {
 				i.eng.Emit(ev.Record)
 			}
@@ -57,27 +75,35 @@ func (i *Instance) eventLoop() {
 	}
 }
 
-func (i *Instance) SetBuffer() error {
-	ev := &event.Event{Name: "set_buffer", Buffer: i.buf}
-	return i.enc.Encode(ev)
+type ExecUnit struct {
+	ID     int32
+	Router *TagRouter
+	enc    event.Encoder
+	conf   map[string]interface{}
+	bopts  *buffer.Options
 }
 
-func (i *Instance) Configure() error {
-	b, err := Encode(i.conf)
+func (u *ExecUnit) SetBuffer() error {
+	return u.Send(&event.Event{Name: "set_buffer", Buffer: u.bopts})
+}
+
+func (u *ExecUnit) Configure() error {
+	b, err := Encode(u.conf)
 	if err != nil {
 		return err
 	}
-	ev := &event.Event{Name: "config", Payload: b}
-	return i.enc.Encode(ev)
+	return u.Send(&event.Event{Name: "config", Payload: b})
 }
 
-func (i *Instance) Start() error {
-	go i.eventLoop()
-	ev := &event.Event{Name: "start"}
-	return i.enc.Encode(ev)
+func (u *ExecUnit) Start() error {
+	return u.Send(&event.Event{Name: "start"})
 }
 
-func (i *Instance) Emit(record *event.Record) error {
-	ev := &event.Event{Name: "record", Record: record}
-	return i.enc.Encode(ev)
+func (u *ExecUnit) Emit(record *event.Record) error {
+	return u.Send(&event.Event{Name: "record", Record: record})
+}
+
+func (u *ExecUnit) Send(ev *event.Event) error {
+	ev.UnitID = u.ID
+	return u.enc.Encode(ev)
 }

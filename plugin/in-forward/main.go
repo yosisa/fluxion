@@ -145,5 +145,7 @@ func parseValue(v interface{}) map[string]interface{} {
 }
 
 func main() {
-	plugin.New(&ForwardInput{}).Run()
+	plugin.New(func() plugin.Plugin {
+		return &ForwardInput{}
+	}).Run()
 }
