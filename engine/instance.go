@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"io"
+	"log"
 	"os"
 	"os/exec"
 
@@ -16,16 +18,17 @@ type Instance struct {
 	conf   map[string]interface{}
 	buf    *buffer.Options
 	Router *TagRouter
+	rbuf   *RingBuffer
 }
 
 func NewInstance(eng *Engine, cmd *process.Command, conf map[string]interface{}, buf *buffer.Options) *Instance {
-	i := &Instance{eng: eng, conf: conf, buf: buf, Router: &TagRouter{}}
+	i := &Instance{eng: eng, conf: conf, buf: buf, Router: &TagRouter{}, rbuf: NewRingBuffer(1024)}
 	cmd.PrepareFunc = func(cmd *exec.Cmd) {
 		cmd.Stderr = os.Stderr
 		w, _ := cmd.StdinPipe()
 		r, _ := cmd.StdoutPipe()
 		i.enc = event.NewEncoder(w)
-		i.dec = event.NewDecoder(r)
+		i.dec = event.NewDecoder(io.TeeReader(r, i.rbuf))
 	}
 	return i
 }
@@ -34,8 +37,12 @@ func (i *Instance) eventLoop() {
 	for {
 		var ev event.Event
 		if err := i.dec.Decode(&ev); err != nil {
+			b := make([]byte, 1024)
+			n, _ := i.rbuf.Read(b)
+			log.Fatalf("%v: last read: %x", err, b[:n])
 			continue
 		}
+		i.rbuf.Clear()
 
 		switch ev.Name {
 		case "record":
