@@ -45,6 +45,20 @@ func (f *JSFilter) Start() error {
 }
 
 func (f *JSFilter) Filter(r *event.Record) (*event.Record, error) {
+	var dropped bool
+	obj := map[string]interface{}{
+		"env": f.conf.Env,
+		"event": map[string]interface{}{
+			"tag":    r.Tag,
+			"time":   r.Time,
+			"record": r.Value,
+		},
+		"drop": func(call otto.FunctionCall) otto.Value {
+			dropped = true
+			return otto.Value{}
+		},
+	}
+	f.vm.Set("$", obj)
 	f.vm.Set("env", f.conf.Env)
 	f.vm.Set("tag", r.Tag)
 	f.vm.Set("time", r.Time)
@@ -52,6 +66,8 @@ func (f *JSFilter) Filter(r *event.Record) (*event.Record, error) {
 	_, err := f.vm.Run(f.script)
 	if err != nil {
 		return nil, err
+	} else if dropped {
+		return nil, nil
 	}
 	return r, nil
 }
