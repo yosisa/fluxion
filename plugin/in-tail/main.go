@@ -28,12 +28,7 @@ type TailInput struct {
 	conf       Config
 	parser     parser.Parser
 	timeParser *parser.TimeParser
-	r          *PositionReader
 	pf         *PositionFile
-	pe         *PositionEntry
-	m          sync.Mutex
-	rotating   bool
-	watcher    *fsnotify.Watcher
 }
 
 func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
@@ -59,103 +54,127 @@ func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
 	return
 }
 
-func (i *TailInput) Start() (err error) {
-	if i.watcher, err = fsnotify.NewWatcher(); err != nil {
-		return
-	}
-
-	i.open()
-	if err = i.Scan(); err != nil {
-		return
-	}
-	go i.eventLoop()
-	return
+func (i *TailInput) Start() error {
+	pe := i.pf.Get(i.conf.Path)
+	pe.ReadFromHead = i.conf.ReadFromHead
+	NewWatcher(pe, i.parseLine)
+	return nil
 }
 
-func (i *TailInput) eventLoop() {
+func (i *TailInput) parseLine(line []byte) {
+	v, err := i.parser.Parse(string(line))
+	if err != nil {
+		return
+	}
+
+	var record *event.Record
+	if i.conf.TimeKey != "" && i.timeParser != nil {
+		if s, ok := v[i.conf.TimeKey].(string); ok {
+			t, err := i.timeParser.Parse(s)
+			if err == nil {
+				delete(v, i.conf.TimeKey)
+				record = event.NewRecordWithTime(i.conf.Tag, t, v)
+			}
+		}
+	}
+	if record == nil {
+		record = event.NewRecord(i.conf.Tag, v)
+	}
+	plugin.Emit(record)
+}
+
+type TailHandler func([]byte)
+
+type Watcher struct {
+	pe       *PositionEntry
+	fsw      *fsnotify.Watcher
+	r        *PositionReader
+	handler  TailHandler
+	rotating bool
+	m        sync.Mutex
+}
+
+func NewWatcher(pe *PositionEntry, h TailHandler) *Watcher {
+	fsw, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
+	}
+	w := &Watcher{
+		pe:      pe,
+		fsw:     fsw,
+		handler: h,
+	}
+	w.open()
+	go w.eventLoop()
+	return w
+}
+
+func (w *Watcher) open() {
+	w.m.Lock()
+	defer w.m.Unlock()
+
+	w.rotating = false
+	if w.r != nil {
+		w.r.Close()
+	}
+
+	r, err := NewPositionReader(w.pe)
+	if err != nil {
+		plugin.Log.Warning(err, ", wait for creation")
+	} else {
+		w.r = r
+		w.fsw.Add(w.pe.Path)
+	}
+}
+
+func (w *Watcher) eventLoop() {
 	tick := time.Tick(10 * time.Second)
 	for {
 		select {
-		case ev := <-i.watcher.Events:
+		case ev := <-w.fsw.Events:
 			plugin.Log.Debug(ev)
-			if err := i.Scan(); err != nil {
+			if err := w.Scan(); err != nil {
 				plugin.Log.Warning(err)
 			}
-		case err := <-i.watcher.Errors:
+		case err := <-w.fsw.Errors:
 			plugin.Log.Warning(err)
 		case <-tick:
-			i.Scan()
+			if err := w.Scan(); err != nil {
+				plugin.Log.Warning(err)
+			}
 		}
 	}
 }
 
-func (i *TailInput) open() {
-	i.m.Lock()
-	defer i.m.Unlock()
-
-	i.rotating = false
-	if i.r != nil {
-		i.r.Close()
-	}
-
-	var err error
-	i.pe = i.pf.Get(i.conf.Path)
-	i.pe.ReadFromHead = i.conf.ReadFromHead
-	if i.r, err = NewPositionReader(i.pe); err != nil {
-		plugin.Log.Warning(err, ", wait for creation")
-	} else {
-		i.watcher.Add(i.conf.Path)
-	}
-}
-
-func (i *TailInput) Scan() error {
+func (w *Watcher) Scan() error {
 	// To make Scan run only one thread at a time.
 	// Also used to block rotation until current scanning completed.
-	i.m.Lock()
-	defer i.m.Unlock()
+	w.m.Lock()
+	defer w.m.Unlock()
 
-	if !i.rotating && i.pe.IsRotated() {
-		plugin.Log.Infof("Rotation detected: %s", i.pe.Path)
+	if !w.rotating && w.pe.IsRotated() {
+		plugin.Log.Infof("Rotation detected: %s", w.pe.Path)
 		var wait time.Duration
-		if i.r != nil {
+		if w.r != nil {
 			wait = 5 * time.Second
 		}
-		i.rotating = true
-		time.AfterFunc(wait, i.open)
+		w.rotating = true
+		time.AfterFunc(wait, w.open)
 	}
 
-	if i.r == nil {
+	if w.r == nil {
 		return nil
 	}
 
 	for {
-		line, _, err := i.r.ReadLine()
+		line, _, err := w.r.ReadLine()
 		if err != nil {
 			if err == io.EOF {
 				return nil
 			}
 			return err
 		}
-
-		v, err := i.parser.Parse(string(line))
-		if err != nil {
-			continue
-		}
-
-		var record *event.Record
-		if i.conf.TimeKey != "" && i.timeParser != nil {
-			if s, ok := v[i.conf.TimeKey].(string); ok {
-				t, err := i.timeParser.Parse(s)
-				if err == nil {
-					delete(v, i.conf.TimeKey)
-					record = event.NewRecordWithTime(i.conf.Tag, t, v)
-				}
-			}
-		}
-		if record == nil {
-			record = event.NewRecord(i.conf.Tag, v)
-		}
-		plugin.Emit(record)
+		w.handler(line)
 	}
 	return nil
 }
