@@ -40,14 +40,12 @@ func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
 	if err = f(&i.conf); err != nil {
 		return
 	}
-	if i.parser, err = parser.Get(i.conf.Format); err != nil {
-		return
+	if i.conf.TimeKey == "" {
+		i.conf.TimeKey = "time"
 	}
-	if i.conf.TimeFormat != "" {
-		i.timeParser, err = parser.NewTimeParser(i.conf.TimeFormat, i.conf.TimeZone)
-		if err != nil {
-			return
-		}
+	i.parser, i.timeParser, err = parser.Get(i.conf.Format, i.conf.TimeFormat, i.conf.TimeZone)
+	if err != nil {
+		return
 	}
 
 	pf, ok := posFiles[i.conf.PosFile]
