@@ -5,12 +5,13 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/engine"
 	"github.com/yosisa/fluxion/event"
 )
+
+var eventCh = make(chan *event.Event, 100)
 
 type ConfigFeeder func(interface{}) error
 
@@ -48,6 +49,7 @@ func New(f PluginFactory) *plugin {
 
 func (p *plugin) Run() {
 	Log.Infof("Plugin created")
+	go eventSender()
 	p.eventListener()
 }
 
@@ -122,12 +124,7 @@ func (u *execUnit) eventLoop() {
 					Log.Warning("Filter error: ", err)
 					continue
 				}
-				ev := &event.Event{UnitID: u.ID, Name: "next_filter", Record: r}
-				mutex.Lock()
-				if err = encoder.Encode(ev); err != nil {
-					Log.Warning("Failed to transmit record: ", err)
-				}
-				mutex.Unlock()
+				send(&event.Event{UnitID: u.ID, Name: "next_filter", Record: r})
 			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
@@ -142,12 +139,22 @@ func (u *execUnit) eventLoop() {
 	}
 }
 
-var encoder = event.NewEncoder(os.Stdout)
-var mutex sync.Mutex
+func Emit(record *event.Record) {
+	send(&event.Event{Name: "record", Record: record})
+}
 
-func Emit(record *event.Record) error {
-	ev := &event.Event{Name: "record", Record: record}
-	mutex.Lock()
-	defer mutex.Unlock()
-	return encoder.Encode(ev)
+func send(ev *event.Event) {
+	eventCh <- ev
+}
+
+func eventSender() {
+	encoder := event.NewEncoder(os.Stdout)
+	for ev := range eventCh {
+		if err := encoder.Encode(ev); err != nil {
+			if err == io.EOF {
+				return
+			}
+			Log.Warning("Failed to send event: ", err)
+		}
+	}
 }
