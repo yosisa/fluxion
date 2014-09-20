@@ -11,6 +11,8 @@ import (
 	"gopkg.in/fsnotify.v1"
 )
 
+var posFiles = make(map[string]*PositionFile)
+
 type Config struct {
 	Tag          string `codec:"tag"`
 	Path         string `codec:"path"`
@@ -47,11 +49,15 @@ func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
 		}
 	}
 
-	pf, err := NewPositionFile(i.conf.PosFile)
-	if err == nil {
-		i.pf = pf
+	pf, ok := posFiles[i.conf.PosFile]
+	if !ok {
+		if pf, err = NewPositionFile(i.conf.PosFile); err != nil {
+			return
+		}
+		posFiles[i.conf.PosFile] = pf
 	}
-	return err
+	i.pf = pf
+	return
 }
 
 func (i *TailInput) Start() error {
