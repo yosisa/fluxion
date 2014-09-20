@@ -33,6 +33,7 @@ type TailInput struct {
 	pe         *PositionEntry
 	m          sync.Mutex
 	rotating   bool
+	watcher    *fsnotify.Watcher
 }
 
 func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
@@ -60,34 +61,34 @@ func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
 	return
 }
 
-func (i *TailInput) Start() error {
+func (i *TailInput) Start() (err error) {
+	if i.watcher, err = fsnotify.NewWatcher(); err != nil {
+		return
+	}
+
 	i.open()
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-
 	if err = i.Scan(); err != nil {
-		return err
+		return
 	}
+	go i.eventLoop()
+	return
+}
 
-	go func() {
-		tick := time.Tick(10 * time.Second)
-		for {
-			select {
-			case ev := <-watcher.Events:
-				plugin.Log.Debug(ev)
-				if err = i.Scan(); err != nil {
-					plugin.Log.Warning(err)
-				}
-			case err := <-watcher.Errors:
+func (i *TailInput) eventLoop() {
+	tick := time.Tick(10 * time.Second)
+	for {
+		select {
+		case ev := <-i.watcher.Events:
+			plugin.Log.Debug(ev)
+			if err := i.Scan(); err != nil {
 				plugin.Log.Warning(err)
-			case <-tick:
-				i.Scan()
 			}
+		case err := <-i.watcher.Errors:
+			plugin.Log.Warning(err)
+		case <-tick:
+			i.Scan()
 		}
-	}()
-	return watcher.Add(i.conf.Path)
+	}
 }
 
 func (i *TailInput) open() {
@@ -98,9 +99,15 @@ func (i *TailInput) open() {
 	if i.r != nil {
 		i.r.Close()
 	}
+
+	var err error
 	i.pe = i.pf.Get(i.conf.Path)
 	i.pe.ReadFromHead = i.conf.ReadFromHead
-	i.r, _ = NewPositionReader(i.pe)
+	if i.r, err = NewPositionReader(i.pe); err != nil {
+		plugin.Log.Warning(err, ", wait for creation")
+	} else {
+		i.watcher.Add(i.conf.Path)
+	}
 }
 
 func (i *TailInput) Scan() error {

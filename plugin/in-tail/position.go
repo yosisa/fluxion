@@ -48,7 +48,7 @@ func (p *PositionEntry) Refresh() int64 {
 func (p *PositionEntry) IsRotated() bool {
 	fi, err := os.Stat(p.Path)
 	if err != nil {
-		return true
+		return false
 	}
 	stat := fi.Sys().(*syscall.Stat_t)
 	return stat.Ino != p.Ino
