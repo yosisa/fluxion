@@ -122,9 +122,11 @@ func (u *execUnit) eventLoop() {
 				r, err := fp.Filter(ev.Record)
 				if err != nil {
 					Log.Warning("Filter error: ", err)
-					continue
+					r = ev.Record
 				}
-				send(&event.Event{UnitID: u.ID, Name: "next_filter", Record: r})
+				if r != nil {
+					send(&event.Event{UnitID: u.ID, Name: "next_filter", Record: r})
+				}
 			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
