@@ -29,7 +29,6 @@ func NewInstance(eng *Engine, cmd *process.Command) *Instance {
 		for _, u := range i.units {
 			u.enc = enc
 		}
-		go i.eventLoop()
 	}
 	return i
 }
@@ -43,6 +42,10 @@ func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buf
 	}
 	i.units[id] = unit
 	return unit
+}
+
+func (i *Instance) Start() {
+	go i.eventLoop()
 }
 
 func (i *Instance) eventLoop() {

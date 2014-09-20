@@ -124,6 +124,9 @@ func (e *Engine) Start() {
 	for _, u := range e.units {
 		u.Start()
 	}
+	for _, p := range e.plugins {
+		p.Start()
+	}
 }
 
 func (e *Engine) Wait() {
