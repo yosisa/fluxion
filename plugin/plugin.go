@@ -106,11 +106,13 @@ func (u *execUnit) eventLoop() {
 				return engine.Decode(b, v)
 			}
 			if err := u.p.Init(f); err != nil {
-				Log.Fatal("Failed to configure: ", err)
+				Log.Critical("Failed to configure: ", err)
+				return
 			}
 		case "start":
 			if err := u.p.Start(); err != nil {
-				Log.Fatal("Failed to start: ", err)
+				Log.Critical("Failed to start: ", err)
+				return
 			}
 		case "record":
 			switch {
