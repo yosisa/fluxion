@@ -9,8 +9,18 @@ type Parser interface {
 	Parse(string) (map[string]interface{}, error)
 }
 
+type ParserFunc func(string) (map[string]interface{}, error)
+
+func (f ParserFunc) Parse(s string) (map[string]interface{}, error) {
+	return f(s)
+}
+
 func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
 	switch format {
+	case "":
+		p = ParserFunc(func(s string) (map[string]interface{}, error) {
+			return map[string]interface{}{"message": s}, nil
+		})
 	case "ltsv":
 		p = &LTSVParser{}
 	case "nginx":
