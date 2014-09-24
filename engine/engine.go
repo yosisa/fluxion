@@ -17,7 +17,7 @@ type Engine struct {
 	plugins map[string]*Instance
 	units   []*ExecUnit
 	filters []*ExecUnit
-	tr      *TagRouter
+	tr      map[string]*TagRouter
 	ftr     *TagRouter
 	bufs    map[string]*buffer.Options
 	unitID  int32
@@ -27,7 +27,7 @@ func New() *Engine {
 	return &Engine{
 		pm:      process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
 		plugins: make(map[string]*Instance),
-		tr:      &TagRouter{},
+		tr:      make(map[string]*TagRouter),
 		ftr:     &TagRouter{},
 		bufs: map[string]*buffer.Options{
 			"default": buffer.DefaultOptions,
@@ -61,7 +61,7 @@ func (e *Engine) RegisterInputPlugin(conf map[string]interface{}) {
 	e.addExecUnit(ins, conf, nil)
 }
 
-func (e *Engine) RegisterOutputPlugin(conf map[string]interface{}) error {
+func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) error {
 	bufName := "default"
 	if name, ok := conf["buffer_name"].(string); ok {
 		bufName = name
@@ -73,7 +73,13 @@ func (e *Engine) RegisterOutputPlugin(conf map[string]interface{}) error {
 
 	ins := e.pluginInstance("fluxion-out-" + conf["type"].(string))
 	unit := e.addExecUnit(ins, conf, buf)
-	if err := e.tr.Add(conf["match"].(string), unit); err != nil {
+
+	tr, ok := e.tr[name]
+	if !ok {
+		tr = &TagRouter{}
+		e.tr[name] = tr
+	}
+	if err := tr.Add(conf["match"].(string), unit); err != nil {
 		log.Fatal(err)
 	}
 	return nil
@@ -106,10 +112,12 @@ func (e *Engine) Filter(record *event.Record) {
 }
 
 func (e *Engine) Emit(record *event.Record) {
-	if ins := e.tr.Route(record.Tag); ins != nil {
-		ins.Emit(record)
-	} else {
-		fmt.Printf("No output plugin exists for tag %s, discard.\n", record.Tag)
+	for _, tr := range e.tr {
+		if ins := tr.Route(record.Tag); ins != nil {
+			ins.Emit(record)
+		} else {
+			fmt.Printf("No output plugin exists for tag %s, discard.\n", record.Tag)
+		}
 	}
 }
 

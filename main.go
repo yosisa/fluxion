@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/yosisa/fluxion/buffer"
@@ -13,7 +15,6 @@ var config struct {
 	Buffer []*buffer.Options
 	Input  []map[string]interface{}
 	Filter []map[string]interface{}
-	Output []map[string]interface{}
 }
 
 func main() {
@@ -21,7 +22,12 @@ func main() {
 	flag.StringVar(&configPath, "c", "/etc/fluxion.toml", "config file")
 	flag.Parse()
 
-	if _, err := toml.DecodeFile(configPath, &config); err != nil {
+	b, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		log.Fatal("Failed to load config: ", err)
+	}
+	_, err = toml.Decode(string(b), &config)
+	if err != nil {
 		log.Fatal("Failed to load config: ", err)
 	}
 
@@ -35,9 +41,25 @@ func main() {
 	for _, conf := range config.Filter {
 		eng.RegisterFilterPlugin(conf)
 	}
-	for _, conf := range config.Output {
-		eng.RegisterOutputPlugin(conf)
+
+	// To support `output:...` form, re-decoding with relax type is needed.
+	var c map[string][]map[string]interface{}
+	toml.Decode(string(b), &c)
+	for k, v := range c {
+		keys := strings.SplitN(k, ":", 2)
+		if strings.ToLower(keys[0]) != "output" {
+			continue
+		}
+
+		var name string
+		if len(keys) == 2 {
+			name = keys[1]
+		}
+		for _, conf := range v {
+			eng.RegisterOutputPlugin(name, conf)
+		}
 	}
+
 	eng.Start()
 	eng.Wait()
 }
