@@ -78,7 +78,7 @@ func (m *Memory) Push(s Sizer) error {
 	e := m.chunks.Front()
 	if e == nil || e.Value.(*MemoryChunk).Size+n > m.maxChunkSize {
 		if e != nil {
-			m.eventCh <- true
+			m.notify()
 		}
 
 		e = m.chunks.PushFront(&MemoryChunk{})
@@ -88,6 +88,9 @@ func (m *Memory) Push(s Sizer) error {
 	}
 
 	e.Value.(*MemoryChunk).Push(s)
+	if m.flushInterval == 0 {
+		m.notify()
+	}
 	return nil
 }
 
@@ -102,9 +105,18 @@ func (m *Memory) Close() {
 	m.chunks.Init()
 }
 
+func (m *Memory) notify() {
+	select {
+	case m.eventCh <- true:
+	default:
+	}
+}
+
 func (m *Memory) pop() {
 	var tick <-chan time.Time
-	tick = time.Tick(m.flushInterval)
+	if m.flushInterval > 0 {
+		tick = time.Tick(m.flushInterval)
+	}
 	for {
 		select {
 		case <-m.eventCh:
