@@ -41,6 +41,11 @@ func (s *HumanSize) UnmarshalText(b []byte) error {
 type Duration time.Duration
 
 func (d *Duration) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*d = 0
+		return nil
+	}
+
 	du, err := time.ParseDuration(string(b))
 	if err != nil {
 		return err
