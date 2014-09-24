@@ -115,8 +115,6 @@ func (e *Engine) Emit(record *event.Record) {
 	for _, tr := range e.tr {
 		if ins := tr.Route(record.Tag); ins != nil {
 			ins.Emit(record)
-		} else {
-			fmt.Printf("No output plugin exists for tag %s, discard.\n", record.Tag)
 		}
 	}
 }
