@@ -1,6 +1,6 @@
 SOURCES := $(shell find . -name '*.go')
 PKG_SOURCES := $(shell find . -name '*.go' ! -path '*/plugin/*/*' -mindepth 2)
-PLUGINS := $(notdir $(shell find plugin -type d -mindepth 1 -maxdepth 1))
+PLUGINS := $(shell find plugin -type f -name main.go -mindepth 2 -maxdepth 2 | cut -d/ -f2)
 
 all: bundles/fluxion plugins
 
