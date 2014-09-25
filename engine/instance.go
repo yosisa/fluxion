@@ -1,36 +1,28 @@
 package engine
 
 import (
-	"io"
 	"log"
 	"os"
 	"os/exec"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
-	"github.com/yosisa/pave/process"
+	"github.com/yosisa/fluxion/pipe"
 )
 
 type Instance struct {
 	eng   *Engine
 	dec   event.Decoder
-	rbuf  *RingBuffer
 	units map[int32]*ExecUnit
+	rp    *pipe.Pipe
+	wp    *pipe.Pipe
 }
 
-func NewInstance(eng *Engine, cmd *process.Command) *Instance {
-	i := &Instance{eng: eng, rbuf: NewRingBuffer(1024), units: make(map[int32]*ExecUnit)}
-	cmd.PrepareFunc = func(cmd *exec.Cmd) {
-		cmd.Stderr = os.Stderr
-		w, _ := cmd.StdinPipe()
-		r, _ := cmd.StdoutPipe()
-		enc := event.NewEncoder(w)
-		i.dec = event.NewDecoder(io.TeeReader(r, i.rbuf))
-		for _, u := range i.units {
-			u.enc = enc
-		}
+func NewInstance(eng *Engine) *Instance {
+	return &Instance{
+		eng:   eng,
+		units: make(map[int32]*ExecUnit),
 	}
-	return i
 }
 
 func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
@@ -39,6 +31,7 @@ func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buf
 		Router: &TagRouter{},
 		conf:   conf,
 		bopts:  bopts,
+		pipe:   i.wp,
 	}
 	i.units[id] = unit
 	return unit
@@ -49,16 +42,7 @@ func (i *Instance) Start() {
 }
 
 func (i *Instance) eventLoop() {
-	for {
-		var ev event.Event
-		if err := i.dec.Decode(&ev); err != nil {
-			b := make([]byte, 1024)
-			n, _ := i.rbuf.Read(b)
-			log.Fatalf("%v: last read: %x", err, b[:n])
-			continue
-		}
-		i.rbuf.Clear()
-
+	for ev := range i.rp.R {
 		switch ev.Name {
 		case "record":
 			i.eng.Filter(ev.Record)
@@ -84,6 +68,7 @@ type ExecUnit struct {
 	enc    event.Encoder
 	conf   map[string]interface{}
 	bopts  *buffer.Options
+	pipe   *pipe.Pipe
 }
 
 func (u *ExecUnit) SetBuffer() error {
@@ -108,5 +93,19 @@ func (u *ExecUnit) Emit(record *event.Record) error {
 
 func (u *ExecUnit) Send(ev *event.Event) error {
 	ev.UnitID = u.ID
-	return u.enc.Encode(ev)
+	u.pipe.W <- ev
+	return nil
+}
+
+func prepareFuncFactory(i *Instance) func(*exec.Cmd) {
+	return func(cmd *exec.Cmd) {
+		cmd.Stderr = os.Stderr
+		w, _ := cmd.StdinPipe()
+		r, _ := cmd.StdoutPipe()
+		i.rp = pipe.NewInterProcess(r, nil)
+		i.wp = pipe.NewInterProcess(nil, w)
+		for _, u := range i.units {
+			u.pipe = i.wp
+		}
+	}
 }

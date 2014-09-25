@@ -2,23 +2,31 @@ package plugin
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
+	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/engine"
 	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/pipe"
 )
 
-var eventCh = make(chan *event.Event, 100)
-
-type ConfigFeeder func(interface{}) error
+var (
+	mh              = &codec.MsgpackHandle{RawToString: true}
+	EmbeddedPlugins = make(map[string]PluginFactory)
+	writePipe       *pipe.Pipe
+)
 
 type PluginFactory func() Plugin
 
+type Env struct {
+	ReadConfig func(interface{}) error
+	Emit       func(*event.Record)
+	Log        *logger
+}
+
 type Plugin interface {
-	Init(ConfigFeeder) error
+	Name() string
+	Init(*Env) error
 	Start() error
 }
 
@@ -36,11 +44,10 @@ type FilterPlugin interface {
 type plugin struct {
 	f     PluginFactory
 	units map[int32]*execUnit
+	pipe  *pipe.Pipe
 }
 
 func New(f PluginFactory) *plugin {
-	Log.Name = strings.SplitN(os.Args[0], "-", 2)[1]
-	Log.Prefix = fmt.Sprintf("[%s] ", Log.Name)
 	return &plugin{
 		f:     f,
 		units: make(map[int32]*execUnit),
@@ -48,30 +55,23 @@ func New(f PluginFactory) *plugin {
 }
 
 func (p *plugin) Run() {
-	Log.Infof("Plugin created")
-	go eventSender()
-	p.eventListener()
+	p.pipe = pipe.NewInterProcess(nil, os.Stdout)
+	p.eventLoop(pipe.NewInterProcess(os.Stdin, nil))
 }
 
-func (p *plugin) eventListener() {
-	dec := event.NewDecoder(os.Stdin)
-	for {
-		var ev event.Event
-		if err := dec.Decode(&ev); err != nil {
-			if err == io.EOF {
-				return
-			} else {
-				Log.Warning(err)
-				continue
-			}
-		}
+func (p *plugin) RunWithPipe(rp *pipe.Pipe, wp *pipe.Pipe) {
+	p.pipe = wp
+	p.eventLoop(rp)
+}
 
+func (p *plugin) eventLoop(pipe *pipe.Pipe) {
+	for ev := range pipe.R {
 		unit, ok := p.units[ev.UnitID]
 		if !ok {
-			unit = newExecUnit(ev.UnitID, p.f())
+			unit = newExecUnit(ev.UnitID, p.f(), p.pipe)
 			p.units[ev.UnitID] = unit
 		}
-		unit.eventCh <- &ev
+		unit.eventCh <- ev
 	}
 }
 
@@ -79,13 +79,21 @@ type execUnit struct {
 	ID      int32
 	p       Plugin
 	eventCh chan *event.Event
+	pipe    *pipe.Pipe
+	log     *logger
 }
 
-func newExecUnit(id int32, p Plugin) *execUnit {
+func newExecUnit(id int32, p Plugin, pipe *pipe.Pipe) *execUnit {
 	u := &execUnit{
 		ID:      id,
 		p:       p,
 		eventCh: make(chan *event.Event, 100),
+		pipe:    pipe,
+	}
+	u.log = &logger{
+		Name:     p.Name(),
+		Prefix:   fmt.Sprintf("[%02d:%s] ", id, p.Name()),
+		emitFunc: u.emit,
 	}
 	go u.eventLoop()
 	return u
@@ -95,6 +103,7 @@ func (u *execUnit) eventLoop() {
 	op, isOutputPlugin := u.p.(OutputPlugin)
 	fp, isFilterPlugin := u.p.(FilterPlugin)
 	var buf *buffer.Memory
+	u.log.Info("plugin started")
 
 	for ev := range u.eventCh {
 		switch ev.Name {
@@ -104,16 +113,20 @@ func (u *execUnit) eventLoop() {
 			}
 		case "config":
 			b := ev.Payload.([]byte)
-			f := func(v interface{}) error {
-				return engine.Decode(b, v)
+			env := &Env{
+				ReadConfig: func(v interface{}) error {
+					return codec.NewDecoderBytes(b, mh).Decode(v)
+				},
+				Emit: u.emit,
+				Log:  u.log,
 			}
-			if err := u.p.Init(f); err != nil {
-				Log.Critical("Failed to configure: ", err)
+			if err := u.p.Init(env); err != nil {
+				u.log.Critical("Failed to configure: ", err)
 				return
 			}
 		case "start":
 			if err := u.p.Start(); err != nil {
-				Log.Critical("Failed to start: ", err)
+				u.log.Critical("Failed to start: ", err)
 				return
 			}
 		case "record":
@@ -121,42 +134,31 @@ func (u *execUnit) eventLoop() {
 			case isFilterPlugin:
 				r, err := fp.Filter(ev.Record)
 				if err != nil {
-					Log.Warning("Filter error: ", err)
+					u.log.Warning("Filter error: ", err)
 					r = ev.Record
 				}
 				if r != nil {
-					send(&event.Event{UnitID: u.ID, Name: "next_filter", Record: r})
+					u.send(&event.Event{Name: "next_filter", Record: r})
 				}
 			case isOutputPlugin:
 				s, err := op.Encode(ev.Record)
 				if err != nil {
-					Log.Warning("Encode error: ", err)
+					u.log.Warning("Encode error: ", err)
 					continue
 				}
 				if err = buf.Push(s); err != nil {
-					Log.Warning("Buffering error: ", err)
+					u.log.Warning("Buffering error: ", err)
 				}
 			}
 		}
 	}
 }
 
-func Emit(record *event.Record) {
-	send(&event.Event{Name: "record", Record: record})
+func (u *execUnit) emit(record *event.Record) {
+	u.send(&event.Event{Name: "record", Record: record})
 }
 
-func send(ev *event.Event) {
-	eventCh <- ev
-}
-
-func eventSender() {
-	encoder := event.NewEncoder(os.Stdout)
-	for ev := range eventCh {
-		if err := encoder.Encode(ev); err != nil {
-			if err == io.EOF {
-				return
-			}
-			Log.Warning("Failed to send event: ", err)
-		}
-	}
+func (u *execUnit) send(ev *event.Event) {
+	ev.UnitID = u.ID
+	u.pipe.W <- ev
 }

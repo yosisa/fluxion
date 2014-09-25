@@ -37,8 +37,9 @@ const (
 )
 
 type logger struct {
-	Name   string
-	Prefix string
+	Name     string
+	Prefix   string
+	emitFunc func(*event.Record)
 }
 
 func (l *logger) emit(lv level, msg string) {
@@ -48,7 +49,7 @@ func (l *logger) emit(lv level, msg string) {
 		"level":   lvStr,
 		"message": l.Prefix + msg,
 	}
-	Emit(event.NewRecord("fluxion.log."+lvStr, v))
+	l.emitFunc(event.NewRecord("fluxion.log."+lvStr, v))
 }
 
 func (l *logger) log(lv level, v ...interface{}) {
@@ -116,5 +117,3 @@ func (l *logger) Fatalf(format string, v ...interface{}) {
 	l.logf(lvCritical, format, v...)
 	os.Exit(1)
 }
-
-var Log = &logger{}

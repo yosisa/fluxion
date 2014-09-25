@@ -10,9 +10,15 @@ import (
 )
 
 type StdoutOutput struct {
+	env *plugin.Env
 }
 
-func (o *StdoutOutput) Init(f plugin.ConfigFeeder) error {
+func (o *StdoutOutput) Name() string {
+	return "out-stdout"
+}
+
+func (o *StdoutOutput) Init(env *plugin.Env) error {
+	o.env = env
 	return nil
 }
 

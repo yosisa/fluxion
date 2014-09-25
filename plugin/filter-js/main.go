@@ -16,14 +16,20 @@ type Config struct {
 }
 
 type JSFilter struct {
+	env    *plugin.Env
 	conf   *Config
 	vm     *otto.Otto
 	script *otto.Script
 }
 
-func (f *JSFilter) Init(fn plugin.ConfigFeeder) (err error) {
+func (f *JSFilter) Name() string {
+	return "filter-js"
+}
+
+func (f *JSFilter) Init(env *plugin.Env) (err error) {
+	f.env = env
 	f.conf = &Config{}
-	if err = fn(f.conf); err != nil {
+	if err = env.ReadConfig(f.conf); err != nil {
 		return
 	}
 

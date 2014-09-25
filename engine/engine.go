@@ -9,6 +9,8 @@ import (
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/pipe"
+	"github.com/yosisa/fluxion/plugin"
 	"github.com/yosisa/pave/process"
 )
 
@@ -39,14 +41,27 @@ func (e *Engine) RegisterBuffer(opts *buffer.Options) {
 	e.bufs[opts.Name] = opts
 }
 
-func (e *Engine) pluginInstance(command string) *Instance {
-	if ins, ok := e.plugins[command]; ok {
+func (e *Engine) pluginInstance(name string) *Instance {
+	if ins, ok := e.plugins[name]; ok {
 		return ins
 	}
-	cmd := process.NewCommand(command)
+
+	if f, ok := plugin.EmbeddedPlugins[name]; ok {
+		ins := NewInstance(e)
+		p1 := pipe.NewInProcess()
+		p2 := pipe.NewInProcess()
+		ins.rp = p1
+		ins.wp = p2
+		go plugin.New(f).RunWithPipe(p2, p1)
+		e.plugins[name] = ins
+		return ins
+	}
+
+	cmd := process.NewCommand("fluxion-" + name)
 	e.pm.Add(cmd)
-	ins := NewInstance(e, cmd)
-	e.plugins[command] = ins
+	ins := NewInstance(e)
+	cmd.PrepareFunc = prepareFuncFactory(ins)
+	e.plugins[name] = ins
 	return ins
 }
 
@@ -57,7 +72,7 @@ func (e *Engine) addExecUnit(ins *Instance, conf map[string]interface{}, bopts *
 }
 
 func (e *Engine) RegisterInputPlugin(conf map[string]interface{}) {
-	ins := e.pluginInstance("fluxion-in-" + conf["type"].(string))
+	ins := e.pluginInstance("in-" + conf["type"].(string))
 	e.addExecUnit(ins, conf, nil)
 }
 
@@ -71,7 +86,7 @@ func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) 
 		return fmt.Errorf("No such buffer defined: %s", bufName)
 	}
 
-	ins := e.pluginInstance("fluxion-out-" + conf["type"].(string))
+	ins := e.pluginInstance("out-" + conf["type"].(string))
 	unit := e.addExecUnit(ins, conf, buf)
 
 	tr, ok := e.tr[name]
@@ -86,7 +101,7 @@ func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) 
 }
 
 func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) {
-	ins := e.pluginInstance("fluxion-filter-" + conf["type"].(string))
+	ins := e.pluginInstance("filter-" + conf["type"].(string))
 	unit := e.addExecUnit(ins, conf, nil)
 
 	pattern := conf["match"].(string)

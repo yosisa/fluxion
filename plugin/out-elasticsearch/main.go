@@ -26,13 +26,19 @@ type Config struct {
 }
 
 type ElasticsearchOutput struct {
+	env    *plugin.Env
 	conf   *Config
 	client *http.Client
 }
 
-func (o *ElasticsearchOutput) Init(f plugin.ConfigFeeder) error {
+func (o *ElasticsearchOutput) Name() string {
+	return "out-elasticsearch"
+}
+
+func (o *ElasticsearchOutput) Init(env *plugin.Env) error {
+	o.env = env
 	o.conf = &Config{}
-	if err := f(o.conf); err != nil {
+	if err := env.ReadConfig(o.conf); err != nil {
 		return err
 	}
 	if o.conf.TypeName == "" {

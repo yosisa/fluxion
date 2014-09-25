@@ -17,15 +17,19 @@ type Config struct {
 }
 
 type ForwardOutput struct {
-	conf Config
+	env  *plugin.Env
+	conf *Config
 	conn net.Conn
 }
 
-func (o *ForwardOutput) Init(f plugin.ConfigFeeder) error {
-	if err := f(&o.conf); err != nil {
-		return err
-	}
-	return nil
+func (o *ForwardOutput) Name() string {
+	return "out-forward"
+}
+
+func (o *ForwardOutput) Init(env *plugin.Env) error {
+	o.env = env
+	o.conf = &Config{}
+	return env.ReadConfig(o.conf)
 }
 
 func (o *ForwardOutput) Start() (err error) {

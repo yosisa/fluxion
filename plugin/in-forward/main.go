@@ -19,14 +19,20 @@ type Config struct {
 }
 
 type ForwardInput struct {
+	env     *plugin.Env
 	conf    *Config
 	ln      net.Listener
 	udpConn *net.UDPConn
 }
 
-func (i *ForwardInput) Init(f plugin.ConfigFeeder) error {
+func (i *ForwardInput) Name() string {
+	return "in-forward"
+}
+
+func (i *ForwardInput) Init(env *plugin.Env) error {
+	i.env = env
 	i.conf = &Config{}
-	return f(i.conf)
+	return env.ReadConfig(i.conf)
 }
 
 func (i *ForwardInput) Start() error {
@@ -69,7 +75,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 		err := dec.Decode(&v)
 		if err != nil {
 			if err != io.EOF {
-				plugin.Log.Warning(err)
+				i.env.Log.Warning(err)
 			}
 			return
 		}
@@ -82,7 +88,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				var v2 []interface{}
 				if err := dec2.Decode(&v2); err != nil {
 					if err != io.EOF {
-						plugin.Log.Warning(err)
+						i.env.Log.Warning(err)
 					}
 					break
 				}
@@ -92,7 +98,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 					continue
 				}
 				r := event.NewRecordWithTime(tag, t, parseValue(v2[1]))
-				plugin.Emit(r)
+				i.env.Emit(r)
 			}
 		case 3:
 			t, err := parseTime(v[1])
@@ -100,7 +106,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				continue
 			}
 			r := event.NewRecordWithTime(tag, t, parseValue(v[2]))
-			plugin.Emit(r)
+			i.env.Emit(r)
 		}
 	}
 }
@@ -111,7 +117,7 @@ func (i *ForwardInput) heartbeatHandler() {
 	for {
 		_, remote, err := i.udpConn.ReadFromUDP(buf)
 		if err != nil {
-			plugin.Log.Warning(err)
+			i.env.Log.Warning(err)
 			continue
 		}
 		i.udpConn.WriteToUDP(res, remote)

@@ -26,16 +26,23 @@ type Config struct {
 }
 
 type TailInput struct {
-	conf       Config
+	env        *plugin.Env
+	conf       *Config
 	parser     parser.Parser
 	timeParser *parser.TimeParser
 	pf         *PositionFile
 	watchers   map[string]*Watcher
 }
 
-func (i *TailInput) Init(f plugin.ConfigFeeder) (err error) {
+func (i *TailInput) Name() string {
+	return "in-tail"
+}
+
+func (i *TailInput) Init(env *plugin.Env) (err error) {
+	i.env = env
+	i.conf = &Config{}
 	i.watchers = make(map[string]*Watcher)
-	if err = f(&i.conf); err != nil {
+	if err = env.ReadConfig(i.conf); err != nil {
 		return
 	}
 	if i.conf.TimeKey == "" {
@@ -67,7 +74,7 @@ func (i *TailInput) pathWatcher() {
 	for {
 		files, err := filepath.Glob(i.conf.Path)
 		if err != nil {
-			plugin.Log.Error(err)
+			i.env.Log.Error(err)
 			return
 		}
 
@@ -85,12 +92,12 @@ func (i *TailInput) pathWatcher() {
 
 		for f, added := range changes {
 			if added {
-				plugin.Log.Info("Start watching file: ", f)
+				i.env.Log.Info("Start watching file: ", f)
 				pe := i.pf.Get(f)
 				pe.ReadFromHead = i.conf.ReadFromHead
-				i.watchers[f] = NewWatcher(pe, i.parseLine)
+				i.watchers[f] = NewWatcher(pe, i.env, i.parseLine)
 			} else {
-				plugin.Log.Info("Stop watching file: ", f)
+				i.env.Log.Info("Stop watching file: ", f)
 				i.watchers[f].Close()
 				delete(i.watchers, f)
 			}
@@ -119,7 +126,7 @@ func (i *TailInput) parseLine(line []byte) {
 	if record == nil {
 		record = event.NewRecord(i.conf.Tag, v)
 	}
-	plugin.Emit(record)
+	i.env.Emit(record)
 }
 
 type TailHandler func([]byte)
@@ -132,9 +139,10 @@ type Watcher struct {
 	rotating bool
 	m        sync.Mutex
 	closeCh  chan struct{}
+	env      *plugin.Env
 }
 
-func NewWatcher(pe *PositionEntry, h TailHandler) *Watcher {
+func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler) *Watcher {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		panic(err)
@@ -144,6 +152,7 @@ func NewWatcher(pe *PositionEntry, h TailHandler) *Watcher {
 		fsw:     fsw,
 		handler: h,
 		closeCh: make(chan struct{}),
+		env:     env,
 	}
 	w.open()
 	go w.eventLoop()
@@ -166,7 +175,7 @@ func (w *Watcher) open() {
 
 	r, err := NewPositionReader(w.pe)
 	if err != nil {
-		plugin.Log.Warning(err, ", wait for creation")
+		w.env.Log.Warning(err, ", wait for creation")
 		w.fsw.Remove(w.pe.Path)
 	} else {
 		w.r = r
@@ -181,15 +190,15 @@ func (w *Watcher) eventLoop() {
 		case <-w.closeCh:
 			return
 		case ev := <-w.fsw.Events:
-			plugin.Log.Debug(ev)
+			w.env.Log.Debug(ev)
 			if err := w.Scan(); err != nil {
-				plugin.Log.Warning(err)
+				w.env.Log.Warning(err)
 			}
 		case err := <-w.fsw.Errors:
-			plugin.Log.Warning(err)
+			w.env.Log.Warning(err)
 		case <-tick:
 			if err := w.Scan(); err != nil {
-				plugin.Log.Warning(err)
+				w.env.Log.Warning(err)
 			}
 		}
 	}
@@ -202,7 +211,7 @@ func (w *Watcher) Scan() error {
 	defer w.m.Unlock()
 
 	if !w.rotating && w.pe.IsRotated() {
-		plugin.Log.Infof("Rotation detected: %s", w.pe.Path)
+		w.env.Log.Infof("Rotation detected: %s", w.pe.Path)
 		var wait time.Duration
 		if w.r != nil {
 			wait = 5 * time.Second
