@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,7 +96,14 @@ func (i *TailInput) pathWatcher() {
 				i.env.Log.Info("Start watching file: ", f)
 				pe := i.pf.Get(f)
 				pe.ReadFromHead = i.conf.ReadFromHead
-				i.watchers[f] = NewWatcher(pe, i.env, i.parseLine)
+				lp := &LineParser{
+					env:        i.env,
+					tag:        realTag(i.conf.Tag, pe.Path),
+					parser:     i.parser,
+					timeParser: i.timeParser,
+					timeKey:    i.conf.TimeKey,
+				}
+				i.watchers[f] = NewWatcher(pe, i.env, lp.parseLine)
 			} else {
 				i.env.Log.Info("Stop watching file: ", f)
 				i.watchers[f].Close()
@@ -107,26 +115,42 @@ func (i *TailInput) pathWatcher() {
 	}
 }
 
-func (i *TailInput) parseLine(line []byte) {
-	v, err := i.parser.Parse(string(line))
+func realTag(tag, path string) string {
+	if !strings.Contains(tag, "*") {
+		return tag
+	}
+	path = strings.Trim(path, "/")
+	return strings.Replace(tag, "*", strings.Replace(path, "/", ".", -1), -1)
+}
+
+type LineParser struct {
+	env        *plugin.Env
+	tag        string
+	parser     parser.Parser
+	timeParser *parser.TimeParser
+	timeKey    string
+}
+
+func (l *LineParser) parseLine(line []byte) {
+	v, err := l.parser.Parse(string(line))
 	if err != nil {
 		return
 	}
 
 	var record *event.Record
-	if i.conf.TimeKey != "" && i.timeParser != nil {
-		if s, ok := v[i.conf.TimeKey].(string); ok {
-			t, err := i.timeParser.Parse(s)
+	if l.timeKey != "" && l.timeParser != nil {
+		if s, ok := v[l.timeKey].(string); ok {
+			t, err := l.timeParser.Parse(s)
 			if err == nil {
-				delete(v, i.conf.TimeKey)
-				record = event.NewRecordWithTime(i.conf.Tag, t, v)
+				delete(v, l.timeKey)
+				record = event.NewRecordWithTime(l.tag, t, v)
 			}
 		}
 	}
 	if record == nil {
-		record = event.NewRecord(i.conf.Tag, v)
+		record = event.NewRecord(l.tag, v)
 	}
-	i.env.Emit(record)
+	l.env.Emit(record)
 }
 
 type TailHandler func([]byte)
