@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net"
 	"time"
 
@@ -20,16 +21,23 @@ type ForwardOutput struct {
 	env  *plugin.Env
 	conf *Config
 	conn net.Conn
+	w    io.Writer
 }
 
 func (o *ForwardOutput) Name() string {
 	return "out-forward"
 }
 
-func (o *ForwardOutput) Init(env *plugin.Env) error {
+func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	o.env = env
 	o.conf = &Config{}
-	return env.ReadConfig(o.conf)
+	if err = env.ReadConfig(o.conf); err != nil {
+		return
+	}
+	o.w = NewAutoConnectWriter(func() (io.Writer, error) {
+		return net.DialTimeout("tcp", o.conf.Server, 5*time.Second)
+	})
+	return
 }
 
 func (o *ForwardOutput) Start() (err error) {
@@ -46,22 +54,11 @@ func (o *ForwardOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 }
 
 func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
-	if o.conn == nil {
-		conn, err := net.DialTimeout("tcp", o.conf.Server, 5*time.Second)
-		if err != nil {
-			return 0, err
-		}
-		o.conn = conn
-	}
-
 	for i, b := range l {
-		if _, err := o.conn.Write(b.(buffer.BytesItem)); err != nil {
-			o.conn.Close()
-			o.conn = nil
+		if _, err := o.w.Write(b.(buffer.BytesItem)); err != nil {
 			return i, err
 		}
 	}
-
 	return len(l), nil
 }
 
