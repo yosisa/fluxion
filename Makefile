@@ -13,6 +13,6 @@ bundles/fluxion-%: plugin/%/*.go $(PKG_SOURCES)
 	cd plugin/$*; go build -o ../../$@
 
 clean:
-	rm -r bundles
+	-rm -r bundles
 
 .PHONY: all plugins clean
