@@ -1,6 +1,9 @@
 package main
 
-import "io"
+import (
+	"io"
+	"math/rand"
+)
 
 type ConnectFunc func() (io.Writer, error)
 
@@ -30,4 +33,42 @@ func (w *AutoConnectWriter) Write(b []byte) (int, error) {
 		w.w = nil
 	}
 	return n, err
+}
+
+type RoundRobinWriter struct {
+	writers []io.Writer
+	weights []int
+	total   int
+}
+
+func (w *RoundRobinWriter) Add(writer io.Writer, weight int) {
+	w.writers = append(w.writers, writer)
+	w.weights = append(w.weights, weight)
+	w.total += weight
+}
+
+func (w *RoundRobinWriter) Write(b []byte) (n int, err error) {
+	i := w.choice()
+	for attempts := 0; attempts < len(w.writers); attempts++ {
+		n, err = w.writers[i].Write(b)
+		if err == nil {
+			return
+		}
+		i++
+		if i >= len(w.writers) {
+			i = 0
+		}
+	}
+	return 0, err
+}
+
+func (w *RoundRobinWriter) choice() int {
+	n := rand.Intn(w.total)
+	for i := 0; i < len(w.weights); i++ {
+		n -= w.weights[i]
+		if n < 0 {
+			return i
+		}
+	}
+	return 0
 }

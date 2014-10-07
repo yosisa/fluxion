@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net"
 	"time"
@@ -14,7 +15,10 @@ import (
 var mh = &codec.MsgpackHandle{}
 
 type Config struct {
-	Server string `codec:"server"`
+	Servers []struct {
+		Server string `codec:"server"`
+		Weight int    `codec:"weight"`
+	} `codec:"servers"`
 }
 
 type ForwardOutput struct {
@@ -34,9 +38,23 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	if err = env.ReadConfig(o.conf); err != nil {
 		return
 	}
-	o.w = NewAutoConnectWriter(func() (io.Writer, error) {
-		return net.DialTimeout("tcp", o.conf.Server, 5*time.Second)
-	})
+
+	if len(o.conf.Servers) == 0 {
+		return errors.New("No server specified")
+	}
+	w := &RoundRobinWriter{}
+	for _, v := range o.conf.Servers {
+		f := func(s string) ConnectFunc {
+			return func() (io.Writer, error) {
+				return net.DialTimeout("tcp", s, 5*time.Second)
+			}
+		}(v.Server)
+		if v.Weight == 0 {
+			v.Weight = 60
+		}
+		w.Add(NewAutoConnectWriter(f), v.Weight)
+	}
+	o.w = w
 	return
 }
 
