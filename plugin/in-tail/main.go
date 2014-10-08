@@ -32,6 +32,7 @@ type TailInput struct {
 	parser     parser.Parser
 	timeParser *parser.TimeParser
 	pf         *PositionFile
+	fsw        *fsnotify.Watcher
 	watchers   map[string]*Watcher
 }
 
@@ -65,9 +66,38 @@ func (i *TailInput) Init(env *plugin.Env) (err error) {
 	return
 }
 
-func (i *TailInput) Start() error {
+func (i *TailInput) Start() (err error) {
+	i.fsw, err = fsnotify.NewWatcher()
+	if err != nil {
+		return
+	}
+	go i.fsEventHandler()
 	go i.pathWatcher()
-	return nil
+	return
+}
+
+func (i *TailInput) fsEventHandler() {
+	for {
+		select {
+		case ev, ok := <-i.fsw.Events:
+			if !ok {
+				return
+			}
+			if w, ok := i.watchers[ev.Name]; ok {
+				select {
+				case w.FSEventC <- ev:
+				default:
+				}
+			} else {
+				i.env.Log.Warningf("FSEvent received for closed watcher: %v", ev)
+			}
+		case err, ok := <-i.fsw.Errors:
+			if !ok {
+				return
+			}
+			i.env.Log.Warning(err)
+		}
+	}
 }
 
 func (i *TailInput) pathWatcher() {
@@ -84,6 +114,7 @@ func (i *TailInput) pathWatcher() {
 			changes[f] = false
 		}
 		for _, f := range files {
+			f = filepath.Clean(f)
 			if _, ok := changes[f]; ok {
 				delete(changes, f)
 			} else {
@@ -103,9 +134,11 @@ func (i *TailInput) pathWatcher() {
 					timeParser: i.timeParser,
 					timeKey:    i.conf.TimeKey,
 				}
-				i.watchers[f] = NewWatcher(pe, i.env, lp.parseLine)
+				i.watchers[f] = NewWatcher(pe, i.env, lp.parseLine, i.fsw)
+				i.fsw.Add(f)
 			} else {
 				i.env.Log.Info("Stop watching file: ", f)
+				i.fsw.Remove(f)
 				i.watchers[f].Close()
 				delete(i.watchers, f)
 			}
@@ -162,21 +195,19 @@ type Watcher struct {
 	handler  TailHandler
 	rotating bool
 	m        sync.Mutex
+	FSEventC chan fsnotify.Event
 	notifyC  chan bool
 	env      *plugin.Env
 }
 
-func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler) *Watcher {
-	fsw, err := fsnotify.NewWatcher()
-	if err != nil {
-		panic(err)
-	}
+func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler, fsw *fsnotify.Watcher) *Watcher {
 	w := &Watcher{
-		pe:      pe,
-		fsw:     fsw,
-		handler: h,
-		notifyC: make(chan bool, 1),
-		env:     env,
+		pe:       pe,
+		fsw:      fsw,
+		handler:  h,
+		FSEventC: make(chan fsnotify.Event, 100),
+		notifyC:  make(chan bool, 1),
+		env:      env,
 	}
 	w.open()
 	go w.eventLoop()
@@ -184,7 +215,7 @@ func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler) *Watcher {
 }
 
 func (w *Watcher) Close() {
-	w.fsw.Close()
+	close(w.FSEventC)
 	close(w.notifyC)
 }
 
@@ -200,7 +231,6 @@ func (w *Watcher) open() {
 	r, err := NewPositionReader(w.pe)
 	if err != nil {
 		w.env.Log.Warning(err, ", wait for creation")
-		w.fsw.Remove(w.pe.Path)
 	} else {
 		w.r = r
 		w.fsw.Add(w.pe.Path)
@@ -216,13 +246,10 @@ func (w *Watcher) eventLoop() {
 			if !ok {
 				return
 			}
-		case ev := <-w.fsw.Events:
+		case ev := <-w.FSEventC:
 			if ev.Op&fsnotify.Create == 0 && ev.Op&fsnotify.Write == 0 {
 				continue
 			}
-		case err := <-w.fsw.Errors:
-			w.env.Log.Warning(err)
-			continue
 		case <-tick:
 		}
 
