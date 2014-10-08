@@ -3,6 +3,7 @@ package buffer
 import (
 	"container/list"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 )
@@ -44,24 +45,28 @@ func (m *MemoryChunk) Push(s Sizer) {
 }
 
 type Memory struct {
-	chunks        *list.List
-	maxChunkSize  int64
-	maxQueueSize  int64
-	flushInterval time.Duration
-	handler       Handler
-	eventCh       chan bool
-	closed        bool
-	m             sync.Mutex
+	chunks           *list.List
+	maxChunkSize     int64
+	maxQueueSize     int64
+	flushInterval    time.Duration
+	retryInterval    time.Duration
+	maxRetryInterval time.Duration
+	handler          Handler
+	eventCh          chan bool
+	closed           bool
+	m                sync.Mutex
 }
 
 func NewMemory(opts *Options, h Handler) *Memory {
 	m := &Memory{
-		chunks:        list.New(),
-		maxChunkSize:  int64(opts.MaxChunkSize),
-		maxQueueSize:  int64(opts.MaxQueueSize),
-		flushInterval: time.Duration(opts.FlushInterval),
-		handler:       h,
-		eventCh:       make(chan bool),
+		chunks:           list.New(),
+		maxChunkSize:     int64(opts.MaxChunkSize),
+		maxQueueSize:     int64(opts.MaxQueueSize),
+		flushInterval:    time.Duration(opts.FlushInterval),
+		retryInterval:    time.Duration(opts.RetryInterval),
+		maxRetryInterval: time.Duration(opts.MaxRetryInterval),
+		handler:          h,
+		eventCh:          make(chan bool),
 	}
 	go m.pop()
 	return m
@@ -113,15 +118,15 @@ func (m *Memory) notify() {
 }
 
 func (m *Memory) pop() {
-	var tick <-chan time.Time
-	if m.flushInterval > 0 {
-		tick = time.Tick(m.flushInterval)
-	}
+	var attempts int
+	tick := time.Tick(m.flushInterval)
 	for {
 		select {
 		case <-m.eventCh:
 			if m.closed {
 				return
+			} else if attempts > 0 {
+				continue
 			}
 		case <-tick:
 		}
@@ -137,9 +142,23 @@ func (m *Memory) pop() {
 		n, err := m.handler.Write(chunk.Items)
 		if err != nil {
 			copy(chunk.Items, chunk.Items[n:])
+			tick = time.Tick(backoff(m.retryInterval, attempts, m.maxRetryInterval))
+			attempts++
 		} else {
 			m.chunks.Remove(e)
+			if attempts > 0 {
+				attempts = 0
+				tick = time.Tick(m.flushInterval)
+			}
 		}
 		m.m.Unlock()
 	}
+}
+
+func backoff(d time.Duration, count int, max time.Duration) time.Duration {
+	r := d * time.Duration(math.Exp2(float64(count)))
+	if r > max {
+		return max
+	}
+	return r
 }

@@ -55,17 +55,35 @@ func (d *Duration) UnmarshalText(b []byte) error {
 }
 
 type Options struct {
-	Name          string    `toml:"name" codec:"name"`
-	Type          string    `toml:"type" codec:"type"`
-	MaxChunkSize  HumanSize `toml:"max_chunk_size" codec:"max_chunk_size"`
-	MaxQueueSize  HumanSize `toml:"max_queue_size" codec:"max_queue_size"`
-	FlushInterval Duration  `toml:"flush_interval" codec:"flush_interval"`
+	Name             string    `toml:"name" codec:"name"`
+	Type             string    `toml:"type" codec:"type"`
+	MaxChunkSize     HumanSize `toml:"max_chunk_size" codec:"max_chunk_size"`
+	MaxQueueSize     HumanSize `toml:"max_queue_size" codec:"max_queue_size"`
+	FlushInterval    Duration  `toml:"flush_interval" codec:"flush_interval"`
+	RetryInterval    Duration  `toml:"retry_interval" codec:"retry_interval"`
+	MaxRetryInterval Duration  `toml:"max_retry_interval" codec:"max_retry_interval"`
 }
 
-var DefaultOptions = &Options{
-	Name:          "default",
-	Type:          "memory",
-	MaxChunkSize:  8 * 1024 * 1024,
-	MaxQueueSize:  64,
-	FlushInterval: Duration(15 * time.Second),
+func (o *Options) SetDefault() {
+	if o.Name == "" {
+		o.Name = "default"
+	}
+	if o.Type == "" {
+		o.Type = "memory"
+	}
+	if o.MaxChunkSize == 0 {
+		o.MaxChunkSize = 1024 * 1024
+	}
+	if o.MaxQueueSize == 0 {
+		o.MaxQueueSize = 256
+	}
+	if o.FlushInterval == 0 {
+		o.FlushInterval = Duration(0)
+	}
+	if o.RetryInterval == 0 {
+		o.RetryInterval = Duration(100 * time.Millisecond)
+	}
+	if o.MaxRetryInterval == 0 {
+		o.MaxRetryInterval = Duration(time.Minute)
+	}
 }

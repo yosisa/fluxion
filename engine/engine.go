@@ -26,18 +26,21 @@ type Engine struct {
 }
 
 func New() *Engine {
+	defaultBuf := &buffer.Options{}
+	defaultBuf.SetDefault()
 	return &Engine{
 		pm:      process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
 		plugins: make(map[string]*Instance),
 		tr:      make(map[string]*TagRouter),
 		ftr:     &TagRouter{},
 		bufs: map[string]*buffer.Options{
-			"default": buffer.DefaultOptions,
+			"default": defaultBuf,
 		},
 	}
 }
 
 func (e *Engine) RegisterBuffer(opts *buffer.Options) {
+	opts.SetDefault()
 	e.bufs[opts.Name] = opts
 }
 
