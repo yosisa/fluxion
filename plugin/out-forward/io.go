@@ -36,22 +36,28 @@ func (w *AutoConnectWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-type RoundRobinWriter struct {
-	ErrorC  chan error
-	writers []io.Writer
-	weights []int
-	total   int
+type weightedWriter struct {
+	io.Writer
+	weight int
+	max    int
 }
 
-func NewRoundRobinWriter() *RoundRobinWriter {
+type RoundRobinWriter struct {
+	ErrorC    chan error
+	writers   []*weightedWriter
+	total     int
+	minWeight int
+}
+
+func NewRoundRobinWriter(minWeight int) *RoundRobinWriter {
 	return &RoundRobinWriter{
-		ErrorC: make(chan error, 10),
+		ErrorC:    make(chan error, 10),
+		minWeight: minWeight,
 	}
 }
 
 func (w *RoundRobinWriter) Add(writer io.Writer, weight int) {
-	w.writers = append(w.writers, writer)
-	w.weights = append(w.weights, weight)
+	w.writers = append(w.writers, &weightedWriter{writer, weight, weight})
 	w.total += weight
 }
 
@@ -60,9 +66,23 @@ func (w *RoundRobinWriter) Write(b []byte) (n int, err error) {
 	for attempts := 0; attempts < len(w.writers); attempts++ {
 		n, err = w.writers[i].Write(b)
 		if err == nil {
+			// Restore weight
+			if w.writers[i].weight != w.writers[i].max {
+				w.total += w.writers[i].max - w.writers[i].weight
+				w.writers[i].weight = w.writers[i].max
+			}
 			return
 		}
 		w.error(err)
+
+		// Decrease weight so that avoid retrying too often
+		weight := w.writers[i].weight / 2
+		if weight < w.minWeight {
+			weight = w.minWeight
+		}
+		w.total -= w.writers[i].weight - weight
+		w.writers[i].weight = weight
+
 		i++
 		if i >= len(w.writers) {
 			i = 0
@@ -73,12 +93,13 @@ func (w *RoundRobinWriter) Write(b []byte) (n int, err error) {
 
 func (w *RoundRobinWriter) choice() int {
 	n := rand.Intn(w.total)
-	for i := 0; i < len(w.weights); i++ {
-		n -= w.weights[i]
+	for i := 0; i < len(w.writers); i++ {
+		n -= w.writers[i].weight
 		if n < 0 {
 			return i
 		}
 	}
+	w.error(errors.New("Failed to choice a random server"))
 	return 0
 }
 

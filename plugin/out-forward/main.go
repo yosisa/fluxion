@@ -15,6 +15,8 @@ import (
 var mh = &codec.MsgpackHandle{}
 
 type Config struct {
+	MinWeight int `codec:"min_weight"`
+
 	Servers []struct {
 		Server string `codec:"server"`
 		Weight int    `codec:"weight"`
@@ -38,11 +40,14 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	if err = env.ReadConfig(o.conf); err != nil {
 		return
 	}
+	if o.conf.MinWeight == 0 {
+		o.conf.MinWeight = 5
+	}
 
 	if len(o.conf.Servers) == 0 {
 		return errors.New("No server specified")
 	}
-	w := NewRoundRobinWriter()
+	w := NewRoundRobinWriter(o.conf.MinWeight)
 	for _, v := range o.conf.Servers {
 		f := func(s string) ConnectFunc {
 			return func() (io.Writer, error) {
