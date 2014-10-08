@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"math/rand"
 )
@@ -36,9 +37,16 @@ func (w *AutoConnectWriter) Write(b []byte) (int, error) {
 }
 
 type RoundRobinWriter struct {
+	ErrorC  chan error
 	writers []io.Writer
 	weights []int
 	total   int
+}
+
+func NewRoundRobinWriter() *RoundRobinWriter {
+	return &RoundRobinWriter{
+		ErrorC: make(chan error, 10),
+	}
 }
 
 func (w *RoundRobinWriter) Add(writer io.Writer, weight int) {
@@ -54,12 +62,13 @@ func (w *RoundRobinWriter) Write(b []byte) (n int, err error) {
 		if err == nil {
 			return
 		}
+		w.error(err)
 		i++
 		if i >= len(w.writers) {
 			i = 0
 		}
 	}
-	return 0, err
+	return 0, errors.New("No server is available")
 }
 
 func (w *RoundRobinWriter) choice() int {
@@ -71,4 +80,11 @@ func (w *RoundRobinWriter) choice() int {
 		}
 	}
 	return 0
+}
+
+func (w *RoundRobinWriter) error(err error) {
+	select {
+	case w.ErrorC <- err:
+	default:
+	}
 }

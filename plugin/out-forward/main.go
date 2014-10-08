@@ -42,7 +42,7 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	if len(o.conf.Servers) == 0 {
 		return errors.New("No server specified")
 	}
-	w := &RoundRobinWriter{}
+	w := NewRoundRobinWriter()
 	for _, v := range o.conf.Servers {
 		f := func(s string) ConnectFunc {
 			return func() (io.Writer, error) {
@@ -54,6 +54,11 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 		}
 		w.Add(NewAutoConnectWriter(f), v.Weight)
 	}
+	go func() {
+		for err := range w.ErrorC {
+			o.env.Log.Warning(err)
+		}
+	}()
 	o.w = w
 	return
 }
@@ -74,6 +79,7 @@ func (o *ForwardOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
 	for i, b := range l {
 		if _, err := o.w.Write(b.(buffer.BytesItem)); err != nil {
+			o.env.Log.Error(err)
 			return i, err
 		}
 	}
