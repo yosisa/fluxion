@@ -162,7 +162,7 @@ type Watcher struct {
 	handler  TailHandler
 	rotating bool
 	m        sync.Mutex
-	closeCh  chan struct{}
+	notifyC  chan bool
 	env      *plugin.Env
 }
 
@@ -175,7 +175,7 @@ func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler) *Watcher {
 		pe:      pe,
 		fsw:     fsw,
 		handler: h,
-		closeCh: make(chan struct{}),
+		notifyC: make(chan bool, 1),
 		env:     env,
 	}
 	w.open()
@@ -185,7 +185,7 @@ func NewWatcher(pe *PositionEntry, env *plugin.Env, h TailHandler) *Watcher {
 
 func (w *Watcher) Close() {
 	w.fsw.Close()
-	close(w.closeCh)
+	close(w.notifyC)
 }
 
 func (w *Watcher) open() {
@@ -205,25 +205,29 @@ func (w *Watcher) open() {
 		w.r = r
 		w.fsw.Add(w.pe.Path)
 	}
+	w.notify()
 }
 
 func (w *Watcher) eventLoop() {
 	tick := time.Tick(10 * time.Second)
 	for {
 		select {
-		case <-w.closeCh:
-			return
+		case _, ok := <-w.notifyC:
+			if !ok {
+				return
+			}
 		case ev := <-w.fsw.Events:
-			w.env.Log.Debug(ev)
-			if err := w.Scan(); err != nil {
-				w.env.Log.Warning(err)
+			if ev.Op&fsnotify.Create == 0 && ev.Op&fsnotify.Write == 0 {
+				continue
 			}
 		case err := <-w.fsw.Errors:
 			w.env.Log.Warning(err)
+			continue
 		case <-tick:
-			if err := w.Scan(); err != nil {
-				w.env.Log.Warning(err)
-			}
+		}
+
+		if err := w.Scan(); err != nil {
+			w.env.Log.Warning(err)
 		}
 	}
 }
@@ -259,6 +263,13 @@ func (w *Watcher) Scan() error {
 		w.handler(line)
 	}
 	return nil
+}
+
+func (w *Watcher) notify() {
+	select {
+	case w.notifyC <- true:
+	default:
+	}
 }
 
 func main() {
