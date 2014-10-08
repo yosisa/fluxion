@@ -26,9 +26,14 @@ func (p *PositionEntry) Refresh() int64 {
 		return 0
 	}
 	stat := fi.Sys().(*syscall.Stat_t)
+	size := fi.Size()
 
 	if stat.Ino == p.Ino {
 		// The file previously handled by in-tail.
+		if size < p.Pos {
+			// Maybe truncated
+			p.SetPos(0)
+		}
 		return p.Pos
 	} else if p.Ino != 0 {
 		// The file was rotated, safe to read from head of new file.
@@ -39,19 +44,23 @@ func (p *PositionEntry) Refresh() int64 {
 	// The file handled first time
 	var pos int64
 	if !p.ReadFromHead {
-		pos = fi.Size()
+		pos = size
 	}
 	p.Set(pos, stat.Ino)
 	return pos
 }
 
-func (p *PositionEntry) IsRotated() bool {
+func (p *PositionEntry) IsRotated() (rotated, truncated bool) {
 	fi, err := os.Stat(p.Path)
 	if err != nil {
-		return false
+		return
 	}
 	stat := fi.Sys().(*syscall.Stat_t)
-	return stat.Ino != p.Ino
+	truncated = fi.Size() < p.Pos
+	if truncated {
+		p.SetPos(0)
+	}
+	return stat.Ino != p.Ino, truncated
 }
 
 func (p *PositionEntry) Set(pos int64, ino uint64) {

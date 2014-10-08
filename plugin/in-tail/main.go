@@ -238,14 +238,22 @@ func (w *Watcher) Scan() error {
 	w.m.Lock()
 	defer w.m.Unlock()
 
-	if !w.rotating && w.pe.IsRotated() {
-		w.env.Log.Infof("Rotation detected: %s", w.pe.Path)
-		var wait time.Duration
-		if w.r != nil {
-			wait = 5 * time.Second
+	if !w.rotating {
+		rotated, truncated := w.pe.IsRotated()
+		if rotated {
+			w.env.Log.Infof("Rotation detected: %s", w.pe.Path)
+			var wait time.Duration
+			if w.r != nil {
+				wait = 5 * time.Second
+			}
+			w.rotating = true
+			time.AfterFunc(wait, w.open)
+		} else if truncated {
+			w.env.Log.Infof("Truncation detected: %s", w.pe.Path)
+			w.rotating = true
+			go w.open()
+			return nil
 		}
-		w.rotating = true
-		time.AfterFunc(wait, w.open)
 	}
 
 	if w.r == nil {
