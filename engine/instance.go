@@ -27,11 +27,15 @@ func NewInstance(eng *Engine) *Instance {
 }
 
 func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
-	i.units[id] = newExecUnit(id, conf, bopts, i.wp)
+	i.units[id] = newExecUnit(id, conf, bopts)
 	return i.units[id]
 }
 
 func (i *Instance) Start() {
+	for _, u := range i.units {
+		u.pipe = i.wp
+		u.Start()
+	}
 	go i.eventLoop()
 }
 
@@ -73,13 +77,12 @@ type ExecUnit struct {
 	emitC   chan *event.Event
 }
 
-func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options, wp pipe.Pipe) *ExecUnit {
+func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
 	u := &ExecUnit{
 		ID:      id,
 		Router:  &TagRouter{},
 		conf:    conf,
 		bopts:   bopts,
-		pipe:    wp,
 		pending: newPending(100 * 1024),
 		emitC:   make(chan *event.Event),
 	}
@@ -190,10 +193,6 @@ func prepareFuncFactory(i *Instance) func(*exec.Cmd) {
 		r, _ := cmd.StdoutPipe()
 		i.rp = pipe.NewInterProcess(r, nil)
 		i.wp = pipe.NewInterProcess(nil, w)
-		for _, u := range i.units {
-			u.pipe = i.wp
-			u.Start()
-		}
 		i.Start()
 	}
 }
