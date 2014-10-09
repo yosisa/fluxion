@@ -6,50 +6,53 @@ import (
 	"github.com/yosisa/fluxion/event"
 )
 
-type Pipe struct {
-	R <-chan *event.Event
-	W chan<- *event.Event
+type Pipe interface {
+	Read() (*event.Event, error)
+	Write(*event.Event) error
 }
 
-func NewInProcess() *Pipe {
-	ch := make(chan *event.Event, 100)
-	return &Pipe{R: ch, W: ch}
+type InProcess struct {
+	c chan *event.Event
 }
 
-func NewInterProcess(r io.Reader, w io.Writer) *Pipe {
-	p := &Pipe{}
+func NewInProcess() *InProcess {
+	return &InProcess{c: make(chan *event.Event, 100)}
+}
+
+func (p *InProcess) Read() (*event.Event, error) {
+	ev := <-p.c
+	return ev, nil
+}
+
+func (p *InProcess) Write(ev *event.Event) error {
+	p.c <- ev
+	return nil
+}
+
+type InterProcess struct {
+	enc event.Encoder
+	dec event.Decoder
+}
+
+func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
+	p := &InterProcess{}
 	if r != nil {
-		dec := event.NewDecoder(r)
-		ch := make(chan *event.Event, 100)
-		go readEvent(dec, ch)
-		p.R = ch
+		p.dec = event.NewDecoder(r)
 	}
-
 	if w != nil {
-		enc := event.NewEncoder(w)
-		ch := make(chan *event.Event)
-		go writeEvent(enc, ch)
-		p.W = ch
+		p.enc = event.NewEncoder(w)
 	}
 	return p
 }
 
-func readEvent(d event.Decoder, c chan *event.Event) {
-	for {
-		var ev event.Event
-		if err := d.Decode(&ev); err != nil {
-			close(c)
-			return
-		}
-
-		c <- &ev
+func (p *InterProcess) Read() (*event.Event, error) {
+	var ev event.Event
+	if err := p.dec.Decode(&ev); err != nil {
+		return nil, err
 	}
+	return &ev, nil
 }
 
-func writeEvent(e event.Encoder, c chan *event.Event) {
-	for ev := range c {
-		if err := e.Encode(ev); err != nil {
-			close(c)
-		}
-	}
+func (p *InterProcess) Write(ev *event.Event) error {
+	return p.enc.Encode(ev)
 }

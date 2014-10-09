@@ -2,7 +2,6 @@ package engine
 
 import (
 	"container/list"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -16,8 +15,8 @@ type Instance struct {
 	eng   *Engine
 	dec   event.Decoder
 	units map[int32]*ExecUnit
-	rp    *pipe.Pipe
-	wp    *pipe.Pipe
+	rp    pipe.Pipe
+	wp    pipe.Pipe
 }
 
 func NewInstance(eng *Engine) *Instance {
@@ -37,7 +36,12 @@ func (i *Instance) Start() {
 }
 
 func (i *Instance) eventLoop() {
-	for ev := range i.rp.R {
+	for {
+		ev, err := i.rp.Read()
+		if err != nil {
+			return
+		}
+
 		switch ev.Name {
 		case "record":
 			i.eng.Filter(ev.Record)
@@ -63,13 +67,13 @@ type ExecUnit struct {
 	enc     event.Encoder
 	conf    map[string]interface{}
 	bopts   *buffer.Options
-	pipe    *pipe.Pipe
+	pipe    pipe.Pipe
 	pending *pending
 	term    int
 	emitC   chan *event.Event
 }
 
-func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options, wp *pipe.Pipe) *ExecUnit {
+func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options, wp pipe.Pipe) *ExecUnit {
 	u := &ExecUnit{
 		ID:      id,
 		Router:  &TagRouter{},
@@ -145,14 +149,8 @@ func (u *ExecUnit) sendPending(v interface{}) error {
 }
 
 func (u *ExecUnit) Send(ev *event.Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
-		}
-	}()
 	ev.UnitID = u.ID
-	u.pipe.W <- ev
-	return
+	return u.pipe.Write(ev)
 }
 
 type pending struct {
