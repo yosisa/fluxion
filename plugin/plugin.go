@@ -7,6 +7,7 @@ import (
 	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/log"
 	"github.com/yosisa/fluxion/pipe"
 )
 
@@ -21,7 +22,7 @@ type PluginFactory func() Plugin
 type Env struct {
 	ReadConfig func(interface{}) error
 	Emit       func(*event.Record)
-	Log        *logger
+	Log        *log.Logger
 }
 
 type Plugin interface {
@@ -80,7 +81,7 @@ type execUnit struct {
 	p       Plugin
 	eventCh chan *event.Event
 	pipe    *pipe.Pipe
-	log     *logger
+	log     *log.Logger
 }
 
 func newExecUnit(id int32, p Plugin, pipe *pipe.Pipe) *execUnit {
@@ -90,10 +91,10 @@ func newExecUnit(id int32, p Plugin, pipe *pipe.Pipe) *execUnit {
 		eventCh: make(chan *event.Event, 100),
 		pipe:    pipe,
 	}
-	u.log = &logger{
+	u.log = &log.Logger{
 		Name:     p.Name(),
 		Prefix:   fmt.Sprintf("[%02d:%s] ", id, p.Name()),
-		emitFunc: u.emit,
+		EmitFunc: u.emit,
 	}
 	go u.eventLoop()
 	return u
