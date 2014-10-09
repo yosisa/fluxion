@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -91,10 +92,15 @@ func (u *ExecUnit) Emit(record *event.Record) error {
 	return u.Send(&event.Event{Name: "record", Record: record})
 }
 
-func (u *ExecUnit) Send(ev *event.Event) error {
+func (u *ExecUnit) Send(ev *event.Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
 	ev.UnitID = u.ID
 	u.pipe.W <- ev
-	return nil
+	return
 }
 
 func prepareFuncFactory(i *Instance) func(*exec.Cmd) {

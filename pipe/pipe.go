@@ -2,7 +2,6 @@ package pipe
 
 import (
 	"io"
-	"log"
 
 	"github.com/yosisa/fluxion/event"
 )
@@ -28,31 +27,29 @@ func NewInterProcess(r io.Reader, w io.Writer) *Pipe {
 
 	if w != nil {
 		enc := event.NewEncoder(w)
-		ch := make(chan *event.Event, 100)
+		ch := make(chan *event.Event)
 		go writeEvent(enc, ch)
 		p.W = ch
 	}
 	return p
 }
 
-func readEvent(d event.Decoder, c chan<- *event.Event) {
+func readEvent(d event.Decoder, c chan *event.Event) {
 	for {
 		var ev event.Event
 		if err := d.Decode(&ev); err != nil {
-			if err != io.EOF {
-				log.Fatal(err)
-			}
-			continue
+			close(c)
+			return
 		}
 
 		c <- &ev
 	}
 }
 
-func writeEvent(e event.Encoder, c <-chan *event.Event) {
+func writeEvent(e event.Encoder, c chan *event.Event) {
 	for ev := range c {
 		if err := e.Encode(ev); err != nil {
-			log.Fatal(err)
+			close(c)
 		}
 	}
 }
