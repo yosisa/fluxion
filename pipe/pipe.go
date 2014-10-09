@@ -2,6 +2,7 @@ package pipe
 
 import (
 	"io"
+	"sync"
 
 	"github.com/yosisa/fluxion/event"
 )
@@ -32,6 +33,8 @@ func (p *InProcess) Write(ev *event.Event) error {
 type InterProcess struct {
 	enc event.Encoder
 	dec event.Decoder
+	rm  sync.Mutex
+	wm  sync.Mutex
 }
 
 func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
@@ -46,6 +49,9 @@ func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
 }
 
 func (p *InterProcess) Read() (*event.Event, error) {
+	p.rm.Lock()
+	defer p.rm.Unlock()
+
 	var ev event.Event
 	if err := p.dec.Decode(&ev); err != nil {
 		return nil, err
@@ -54,5 +60,7 @@ func (p *InterProcess) Read() (*event.Event, error) {
 }
 
 func (p *InterProcess) Write(ev *event.Event) error {
+	p.wm.Lock()
+	defer p.wm.Unlock()
 	return p.enc.Encode(ev)
 }
