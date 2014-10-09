@@ -139,18 +139,6 @@ func (e *Engine) Emit(record *event.Record) {
 
 func (e *Engine) Start() {
 	e.pm.Start()
-	for _, u := range e.units {
-		u.SetBuffer()
-	}
-	for _, u := range e.units {
-		u.Configure()
-	}
-	for _, u := range e.units {
-		u.Start()
-	}
-	for _, p := range e.plugins {
-		p.Start()
-	}
 }
 
 func (e *Engine) Wait() {
