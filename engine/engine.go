@@ -2,13 +2,12 @@ package engine
 
 import (
 	"fmt"
-	"log"
 	"sync/atomic"
-
 	"time"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/log"
 	"github.com/yosisa/fluxion/pipe"
 	"github.com/yosisa/fluxion/plugin"
 	"github.com/yosisa/pave/process"
@@ -24,12 +23,13 @@ type Engine struct {
 	ftr     *TagRouter
 	bufs    map[string]*buffer.Options
 	unitID  int32
+	log     *log.Logger
 }
 
 func New() *Engine {
 	defaultBuf := &buffer.Options{}
 	defaultBuf.SetDefault()
-	return &Engine{
+	e := &Engine{
 		pm:      process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
 		plugins: make(map[string]*Instance),
 		tr:      make(map[string]*TagRouter),
@@ -38,6 +38,12 @@ func New() *Engine {
 			"default": defaultBuf,
 		},
 	}
+	e.log = &log.Logger{
+		Name:     "engine",
+		Prefix:   "[engine] ",
+		EmitFunc: e.Filter,
+	}
+	return e
 }
 
 func (e *Engine) RegisterBuffer(opts *buffer.Options) {
@@ -49,24 +55,21 @@ func (e *Engine) pluginInstance(name string) *Instance {
 	if ins, ok := e.plugins[name]; ok {
 		return ins
 	}
+	ins := NewInstance(e)
+	e.plugins[name] = ins
 
 	if f, ok := plugin.EmbeddedPlugins[name]; ok {
-		ins := NewInstance(e)
 		p1 := pipe.NewInProcess()
 		p2 := pipe.NewInProcess()
 		ins.rp = p1
 		ins.wp = p2
 		go plugin.New(f).RunWithPipe(p2, p1)
-		e.plugins[name] = ins
 		e.embeds = append(e.embeds, ins)
-		return ins
+	} else {
+		e.pm.Add(process.New("fluxion-"+name, prepareFuncFactory(ins), func(err error) {
+			e.log.Criticalf("%s plugin crashed: %v", name, err)
+		}))
 	}
-
-	cmd := process.NewCommand("fluxion-" + name)
-	e.pm.Add(cmd)
-	ins := NewInstance(e)
-	cmd.PrepareFunc = prepareFuncFactory(ins)
-	e.plugins[name] = ins
 	return ins
 }
 
@@ -100,27 +103,28 @@ func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) 
 		e.tr[name] = tr
 	}
 	if err := tr.Add(conf["match"].(string), unit); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	return nil
 }
 
-func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) {
+func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) error {
 	ins := e.pluginInstance("filter-" + conf["type"].(string))
 	unit := e.addExecUnit(ins, conf, nil)
 
 	pattern := conf["match"].(string)
 	if err := e.ftr.Add(pattern, unit); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// Register new filter to the preceding filters
 	for _, f := range e.filters {
 		if err := f.Router.Add(pattern, unit); err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 	e.filters = append(e.filters, unit)
+	return nil
 }
 
 func (e *Engine) Filter(record *event.Record) {

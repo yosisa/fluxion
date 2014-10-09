@@ -39,7 +39,7 @@ func main() {
 		eng.RegisterInputPlugin(conf)
 	}
 	for _, conf := range config.Filter {
-		eng.RegisterFilterPlugin(conf)
+		must(eng.RegisterFilterPlugin(conf))
 	}
 
 	// To support `output:...` form, re-decoding with relax type is needed.
@@ -56,10 +56,16 @@ func main() {
 			name = keys[1]
 		}
 		for _, conf := range v {
-			eng.RegisterOutputPlugin(name, conf)
+			must(eng.RegisterOutputPlugin(name, conf))
 		}
 	}
 
 	eng.Start()
 	eng.Wait()
+}
+
+func must(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
 }
