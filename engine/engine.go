@@ -17,6 +17,7 @@ import (
 type Engine struct {
 	pm      *process.ProcessManager
 	plugins map[string]*Instance
+	embeds  []*Instance
 	units   []*ExecUnit
 	filters []*ExecUnit
 	tr      map[string]*TagRouter
@@ -57,6 +58,7 @@ func (e *Engine) pluginInstance(name string) *Instance {
 		ins.wp = p2
 		go plugin.New(f).RunWithPipe(p2, p1)
 		e.plugins[name] = ins
+		e.embeds = append(e.embeds, ins)
 		return ins
 	}
 
@@ -138,19 +140,10 @@ func (e *Engine) Emit(record *event.Record) {
 }
 
 func (e *Engine) Start() {
-	e.pm.Start()
-	for _, u := range e.units {
-		u.SetBuffer()
-	}
-	for _, u := range e.units {
-		u.Configure()
-	}
-	for _, u := range e.units {
-		u.Start()
-	}
-	for _, p := range e.plugins {
+	for _, p := range e.embeds {
 		p.Start()
 	}
+	e.pm.Start()
 }
 
 func (e *Engine) Wait() {

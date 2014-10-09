@@ -45,7 +45,7 @@ type FilterPlugin interface {
 type plugin struct {
 	f     PluginFactory
 	units map[int32]*execUnit
-	pipe  *pipe.Pipe
+	pipe  pipe.Pipe
 }
 
 func New(f PluginFactory) *plugin {
@@ -60,13 +60,18 @@ func (p *plugin) Run() {
 	p.eventLoop(pipe.NewInterProcess(os.Stdin, nil))
 }
 
-func (p *plugin) RunWithPipe(rp *pipe.Pipe, wp *pipe.Pipe) {
+func (p *plugin) RunWithPipe(rp pipe.Pipe, wp pipe.Pipe) {
 	p.pipe = wp
 	p.eventLoop(rp)
 }
 
-func (p *plugin) eventLoop(pipe *pipe.Pipe) {
-	for ev := range pipe.R {
+func (p *plugin) eventLoop(pipe pipe.Pipe) {
+	for {
+		ev, err := pipe.Read()
+		if err != nil {
+			return
+		}
+
 		unit, ok := p.units[ev.UnitID]
 		if !ok {
 			unit = newExecUnit(ev.UnitID, p.f(), p.pipe)
@@ -80,11 +85,11 @@ type execUnit struct {
 	ID      int32
 	p       Plugin
 	eventCh chan *event.Event
-	pipe    *pipe.Pipe
+	pipe    pipe.Pipe
 	log     *log.Logger
 }
 
-func newExecUnit(id int32, p Plugin, pipe *pipe.Pipe) *execUnit {
+func newExecUnit(id int32, p Plugin, pipe pipe.Pipe) *execUnit {
 	u := &execUnit{
 		ID:      id,
 		p:       p,
@@ -161,5 +166,5 @@ func (u *execUnit) emit(record *event.Record) {
 
 func (u *execUnit) send(ev *event.Event) {
 	ev.UnitID = u.ID
-	u.pipe.W <- ev
+	u.pipe.Write(ev)
 }
