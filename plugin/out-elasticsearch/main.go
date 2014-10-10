@@ -63,7 +63,7 @@ func (o *ElasticsearchOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 
 	if o.conf.LogstashFormat {
 		if _, ok := r.Value["@timestamp"]; !ok {
-			r.Value["@timestamp"] = r.Time.Format("2006-01-02T15:04:05-07:00")
+			r.Value["@timestamp"] = r.Time.Format("2006-01-02T15:04:05.000-07:00")
 		}
 		index = r.Time.Format(o.conf.LogstashPrefix + "-" + o.conf.LogstashDateFormat)
 	}
