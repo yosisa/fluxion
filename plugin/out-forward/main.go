@@ -12,10 +12,9 @@ import (
 	"github.com/yosisa/fluxion/plugin"
 )
 
-var mh = &codec.MsgpackHandle{}
-
 type Config struct {
-	MinWeight int `codec:"min_weight"`
+	MinWeight  int  `codec:"min_weight"`
+	Compatible bool `codec:"compatible"`
 
 	Servers []struct {
 		Server string `codec:"server"`
@@ -28,6 +27,7 @@ type ForwardOutput struct {
 	conf *Config
 	conn net.Conn
 	w    io.Writer
+	mh   *codec.MsgpackHandle
 }
 
 func (o *ForwardOutput) Name() string {
@@ -42,6 +42,11 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	}
 	if o.conf.MinWeight == 0 {
 		o.conf.MinWeight = 5
+	}
+	if o.conf.Compatible {
+		o.mh = &codec.MsgpackHandle{}
+	} else {
+		o.mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}
 	}
 
 	if len(o.conf.Servers) == 0 {
@@ -74,8 +79,13 @@ func (o *ForwardOutput) Start() (err error) {
 
 func (o *ForwardOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 	var b []byte
-	v := []interface{}{r.Tag, r.Time.Unix(), r.Value}
-	if err := codec.NewEncoderBytes(&b, mh).Encode(v); err != nil {
+	var v []interface{}
+	if o.conf.Compatible {
+		v = []interface{}{r.Tag, r.Time.Unix(), r.Value}
+	} else {
+		v = []interface{}{r.Tag, r.Time, r.Value}
+	}
+	if err := codec.NewEncoderBytes(&b, o.mh).Encode(v); err != nil {
 		return nil, err
 	}
 	return buffer.BytesItem(b), nil

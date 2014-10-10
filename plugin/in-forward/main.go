@@ -95,6 +95,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 
 				t, err := parseTime(v2[0])
 				if err != nil {
+					i.env.Log.Errorf("Time decode error: %v, skipping", err)
 					continue
 				}
 				r := event.NewRecordWithTime(tag, t, parseValue(v2[1]))
@@ -103,6 +104,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 		case 3:
 			t, err := parseTime(v[1])
 			if err != nil {
+				i.env.Log.Errorf("Time decode error: %v, skipping", err)
 				continue
 			}
 			r := event.NewRecordWithTime(tag, t, parseValue(v[2]))
@@ -127,6 +129,12 @@ func (i *ForwardInput) heartbeatHandler() {
 func parseTime(v interface{}) (t time.Time, err error) {
 	var n int64
 	switch typed := v.(type) {
+	case []byte:
+		err = t.UnmarshalBinary(typed)
+		return
+	case string:
+		err = t.UnmarshalBinary([]byte(typed))
+		return
 	case int64:
 		n = typed
 	case uint64:
