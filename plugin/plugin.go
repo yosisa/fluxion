@@ -3,6 +3,9 @@ package plugin
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
@@ -57,6 +60,7 @@ func New(f PluginFactory) *plugin {
 
 func (p *plugin) Run() {
 	p.pipe = pipe.NewInterProcess(nil, os.Stdout)
+	go p.signalHandler()
 	p.eventLoop(pipe.NewInterProcess(os.Stdin, nil))
 }
 
@@ -72,12 +76,38 @@ func (p *plugin) eventLoop(pipe pipe.Pipe) {
 			return
 		}
 
-		unit, ok := p.units[ev.UnitID]
-		if !ok {
-			unit = newExecUnit(ev.UnitID, p.f(), p.pipe)
-			p.units[ev.UnitID] = unit
+		switch ev.Name {
+		case "stop":
+			p.stop()
+			p.pipe.Write(&event.Event{Name: "terminated"})
+			return
+		default:
+			unit, ok := p.units[ev.UnitID]
+			if !ok {
+				unit = newExecUnit(ev.UnitID, p.f(), p.pipe)
+				p.units[ev.UnitID] = unit
+			}
+			unit.eventCh <- ev
 		}
-		unit.eventCh <- ev
+	}
+}
+
+func (p *plugin) stop() {
+	var wg sync.WaitGroup
+	for _, unit := range p.units {
+		wg.Add(1)
+		go func(unit *execUnit) {
+			unit.stop()
+			wg.Done()
+		}(unit)
+	}
+	wg.Wait()
+}
+
+func (p *plugin) signalHandler() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT)
+	for _ = range c {
 	}
 }
 
@@ -85,6 +115,7 @@ type execUnit struct {
 	ID      int32
 	p       Plugin
 	eventCh chan *event.Event
+	doneC   chan bool
 	pipe    pipe.Pipe
 	log     *log.Logger
 }
@@ -94,6 +125,7 @@ func newExecUnit(id int32, p Plugin, pipe pipe.Pipe) *execUnit {
 		ID:      id,
 		p:       p,
 		eventCh: make(chan *event.Event, 100),
+		doneC:   make(chan bool),
 		pipe:    pipe,
 	}
 	u.log = &log.Logger{
@@ -156,8 +188,13 @@ func (u *execUnit) eventLoop() {
 					u.log.Warning("Buffering error: ", err)
 				}
 			}
+		case "stop":
+			if isOutputPlugin {
+				buf.Close()
+			}
 		}
 	}
+	close(u.doneC)
 }
 
 func (u *execUnit) emit(record *event.Record) {
@@ -167,4 +204,10 @@ func (u *execUnit) emit(record *event.Record) {
 func (u *execUnit) send(ev *event.Event) {
 	ev.UnitID = u.ID
 	u.pipe.Write(ev)
+}
+
+func (u *execUnit) stop() {
+	u.eventCh <- &event.Event{Name: "stop"}
+	close(u.eventCh)
+	<-u.doneC
 }

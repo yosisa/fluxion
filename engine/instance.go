@@ -17,12 +17,14 @@ type Instance struct {
 	units map[int32]*ExecUnit
 	rp    pipe.Pipe
 	wp    pipe.Pipe
+	doneC chan bool
 }
 
 func NewInstance(eng *Engine) *Instance {
 	return &Instance{
 		eng:   eng,
 		units: make(map[int32]*ExecUnit),
+		doneC: make(chan bool),
 	}
 }
 
@@ -37,6 +39,11 @@ func (i *Instance) Start() {
 		u.Start()
 	}
 	go i.eventLoop()
+}
+
+func (i *Instance) Stop() {
+	i.wp.Write(&event.Event{Name: "stop"})
+	<-i.doneC
 }
 
 func (i *Instance) eventLoop() {
@@ -61,6 +68,9 @@ func (i *Instance) eventLoop() {
 			} else {
 				i.eng.Emit(ev.Record)
 			}
+		case "terminated":
+			close(i.doneC)
+			return
 		}
 	}
 }

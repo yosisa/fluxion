@@ -2,7 +2,13 @@ package engine
 
 import (
 	"fmt"
+	glog "log"
+	"os"
+	"os/signal"
+	"strings"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/yosisa/fluxion/buffer"
@@ -30,7 +36,7 @@ func New() *Engine {
 	defaultBuf := &buffer.Options{}
 	defaultBuf.SetDefault()
 	e := &Engine{
-		pm:      process.NewProcessManager(process.StrategyRestartAlways, 3*time.Second),
+		pm:      process.NewProcessManager(process.StrategyRestartOnError, 3*time.Second),
 		plugins: make(map[string]*Instance),
 		tr:      make(map[string]*TagRouter),
 		ftr:     &TagRouter{},
@@ -148,8 +154,41 @@ func (e *Engine) Start() {
 		p.Start()
 	}
 	e.pm.Start()
+	go e.signalHandler()
 }
 
 func (e *Engine) Wait() {
 	e.pm.Wait()
+}
+
+func (e *Engine) Stop() {
+	time.AfterFunc(10*time.Second, e.pm.Stop)
+	e.stopPlugins("in-")
+	e.stopPlugins("filter-")
+	e.stopPlugins("out-")
+}
+
+func (e *Engine) stopPlugins(prefix string) {
+	var wg sync.WaitGroup
+	for name, ins := range e.plugins {
+		if strings.HasPrefix(name, prefix) {
+			wg.Add(1)
+			go func(name string, ins *Instance) {
+				ins.Stop()
+				glog.Printf("%s plugin stopped", name)
+				wg.Done()
+			}(name, ins)
+		}
+	}
+	wg.Wait()
+}
+
+func (e *Engine) signalHandler() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT)
+	for _ = range c {
+		e.Stop()
+		signal.Stop(c)
+		close(c)
+	}
 }
