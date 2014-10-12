@@ -32,6 +32,8 @@ func (p *InProcess) Write(ev *message.Message) error {
 }
 
 type InterProcess struct {
+	r   io.Reader
+	w   io.Writer
 	enc event.Encoder
 	dec event.Decoder
 	rm  sync.Mutex
@@ -41,9 +43,11 @@ type InterProcess struct {
 func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
 	p := &InterProcess{}
 	if r != nil {
+		p.r = r
 		p.dec = event.NewDecoder(r)
 	}
 	if w != nil {
+		p.w = w
 		p.enc = event.NewEncoder(w)
 	}
 	return p
@@ -52,11 +56,20 @@ func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
 func (p *InterProcess) Read() (*message.Message, error) {
 	p.rm.Lock()
 	defer p.rm.Unlock()
-	return message.Decode(p.dec)
+	b := make([]byte, 1)
+	if _, err := p.r.Read(b); err != nil {
+		return nil, err
+	}
+	m := &message.Message{Type: message.MessageType(b[0])}
+	m.Decode(p.dec)
+	return m, nil
 }
 
 func (p *InterProcess) Write(m *message.Message) error {
 	p.wm.Lock()
 	defer p.wm.Unlock()
-	return message.Encode(p.enc, m)
+	if _, err := p.w.Write([]byte{byte(m.Type)}); err != nil {
+		return err
+	}
+	return m.Encode(p.enc)
 }

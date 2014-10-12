@@ -5,7 +5,15 @@ import (
 	"github.com/yosisa/fluxion/event"
 )
 
-type MessageType byte
+type Encoder interface {
+	Encode(interface{}) error
+}
+
+type Decoder interface {
+	Decode(interface{}) error
+}
+
+type MessageType uint8
 
 const (
 	TypInfoRequest MessageType = iota
@@ -25,43 +33,19 @@ type Message struct {
 	Payload interface{}
 }
 
-type Encoder interface {
-	Encode(interface{}) error
+func (m *Message) Encode(enc Encoder) (err error) {
+	if err = enc.Encode(m.UnitID); err != nil {
+		return
+	}
+	return enc.Encode(m.Payload)
 }
 
-type Decoder interface {
-	Decode(interface{}) error
-}
+func (m *Message) Decode(dec Decoder) (err error) {
+	if err = dec.Decode(&m.UnitID); err != nil {
+		return
+	}
 
-func Encode(enc Encoder, m *Message) error {
-	if err := enc.Encode(m.Type); err != nil {
-		return err
-	}
-	if err := enc.Encode(m.UnitID); err != nil {
-		return err
-	}
 	switch m.Type {
-	case TypInfoRequest, TypStart, TypStop, TypTerminated:
-		return nil
-	default:
-		return enc.Encode(m.Payload)
-	}
-}
-
-func Decode(dec Decoder) (*Message, error) {
-	var m Message
-	if err := dec.Decode(&m.Type); err != nil {
-		return nil, err
-	}
-	if err := dec.Decode(&m.UnitID); err != nil {
-		return nil, err
-	}
-
-	var err error
-	switch m.Type {
-	case TypInfoRequest, TypStart, TypStop, TypTerminated:
-		return &m, nil
-	case TypInfoResponse:
 	case TypBufferOption:
 		var opts buffer.Options
 		err = dec.Decode(&opts)
@@ -74,9 +58,8 @@ func Decode(dec Decoder) (*Message, error) {
 		var event event.Record
 		err = dec.Decode(&event)
 		m.Payload = &event
+	default:
+		err = dec.Decode(&m.Payload)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
+	return
 }
