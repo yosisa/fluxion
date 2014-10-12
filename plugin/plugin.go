@@ -11,6 +11,7 @@ import (
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/fluxion/log"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
 )
 
@@ -71,23 +72,23 @@ func (p *plugin) RunWithPipe(rp pipe.Pipe, wp pipe.Pipe) {
 
 func (p *plugin) eventLoop(pipe pipe.Pipe) {
 	for {
-		ev, err := pipe.Read()
+		m, err := pipe.Read()
 		if err != nil {
 			return
 		}
 
-		switch ev.Name {
-		case "stop":
+		switch m.Type {
+		case message.TypStop:
 			p.stop()
-			p.pipe.Write(&event.Event{Name: "terminated"})
+			p.pipe.Write(&message.Message{Type: message.TypTerminated})
 			return
 		default:
-			unit, ok := p.units[ev.UnitID]
+			unit, ok := p.units[m.UnitID]
 			if !ok {
-				unit = newExecUnit(ev.UnitID, p.f(), p.pipe)
-				p.units[ev.UnitID] = unit
+				unit = newExecUnit(m.UnitID, p.f(), p.pipe)
+				p.units[m.UnitID] = unit
 			}
-			unit.eventCh <- ev
+			unit.msgC <- m
 		}
 	}
 }
@@ -112,21 +113,21 @@ func (p *plugin) signalHandler() {
 }
 
 type execUnit struct {
-	ID      int32
-	p       Plugin
-	eventCh chan *event.Event
-	doneC   chan bool
-	pipe    pipe.Pipe
-	log     *log.Logger
+	ID    int32
+	p     Plugin
+	msgC  chan *message.Message
+	doneC chan bool
+	pipe  pipe.Pipe
+	log   *log.Logger
 }
 
 func newExecUnit(id int32, p Plugin, pipe pipe.Pipe) *execUnit {
 	u := &execUnit{
-		ID:      id,
-		p:       p,
-		eventCh: make(chan *event.Event, 100),
-		doneC:   make(chan bool),
-		pipe:    pipe,
+		ID:    id,
+		p:     p,
+		msgC:  make(chan *message.Message, 100),
+		doneC: make(chan bool),
+		pipe:  pipe,
 	}
 	u.log = &log.Logger{
 		Name:     p.Name(),
@@ -143,14 +144,14 @@ func (u *execUnit) eventLoop() {
 	var buf *buffer.Memory
 	u.log.Info("plugin started")
 
-	for ev := range u.eventCh {
-		switch ev.Name {
-		case "set_buffer":
+	for m := range u.msgC {
+		switch m.Type {
+		case message.TypBufferOption:
 			if isOutputPlugin {
-				buf = buffer.NewMemory(ev.Buffer, op)
+				buf = buffer.NewMemory(m.Payload.(*buffer.Options), op)
 			}
-		case "config":
-			b := ev.Payload.([]byte)
+		case message.TypConfigure:
+			b := m.Payload.([]byte)
 			env := &Env{
 				ReadConfig: func(v interface{}) error {
 					return codec.NewDecoderBytes(b, mh).Decode(v)
@@ -162,24 +163,25 @@ func (u *execUnit) eventLoop() {
 				u.log.Critical("Failed to configure: ", err)
 				return
 			}
-		case "start":
+		case message.TypStart:
 			if err := u.p.Start(); err != nil {
 				u.log.Critical("Failed to start: ", err)
 				return
 			}
-		case "record":
+		case message.TypEvent:
 			switch {
 			case isFilterPlugin:
-				r, err := fp.Filter(ev.Record)
+				ev := m.Payload.(*event.Record)
+				r, err := fp.Filter(ev)
 				if err != nil {
 					u.log.Warning("Filter error: ", err)
-					r = ev.Record
+					r = ev
 				}
 				if r != nil {
-					u.send(&event.Event{Name: "next_filter", Record: r})
+					u.send(&message.Message{Type: message.TypEventChain, Payload: r})
 				}
 			case isOutputPlugin:
-				s, err := op.Encode(ev.Record)
+				s, err := op.Encode(m.Payload.(*event.Record))
 				if err != nil {
 					u.log.Warning("Encode error: ", err)
 					continue
@@ -188,7 +190,7 @@ func (u *execUnit) eventLoop() {
 					u.log.Warning("Buffering error: ", err)
 				}
 			}
-		case "stop":
+		case message.TypStop:
 			if isOutputPlugin {
 				buf.Close()
 			}
@@ -198,16 +200,16 @@ func (u *execUnit) eventLoop() {
 }
 
 func (u *execUnit) emit(record *event.Record) {
-	u.send(&event.Event{Name: "record", Record: record})
+	u.send(&message.Message{Type: message.TypEvent, Payload: record})
 }
 
-func (u *execUnit) send(ev *event.Event) {
-	ev.UnitID = u.ID
-	u.pipe.Write(ev)
+func (u *execUnit) send(m *message.Message) {
+	m.UnitID = u.ID
+	u.pipe.Write(m)
 }
 
 func (u *execUnit) stop() {
-	u.eventCh <- &event.Event{Name: "stop"}
-	close(u.eventCh)
+	u.msgC <- &message.Message{Type: message.TypStop}
+	close(u.msgC)
 	<-u.doneC
 }

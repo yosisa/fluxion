@@ -8,6 +8,7 @@ import (
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
 )
 
@@ -42,33 +43,34 @@ func (i *Instance) Start() {
 }
 
 func (i *Instance) Stop() {
-	i.wp.Write(&event.Event{Name: "stop"})
+	i.wp.Write(&message.Message{Type: message.TypStop})
 	<-i.doneC
 }
 
 func (i *Instance) eventLoop() {
 	for {
-		ev, err := i.rp.Read()
+		m, err := i.rp.Read()
 		if err != nil {
 			return
 		}
 
-		switch ev.Name {
-		case "record":
-			i.eng.Filter(ev.Record)
-		case "next_filter":
-			unit, ok := i.units[ev.UnitID]
+		switch m.Type {
+		case message.TypEvent:
+			i.eng.Filter(m.Payload.(*event.Record))
+		case message.TypEventChain:
+			unit, ok := i.units[m.UnitID]
 			if !ok {
-				log.Printf("Unit ID %d not known", ev.UnitID)
+				log.Printf("Unit ID %d not known", m.UnitID)
 				continue
 			}
 
-			if e := unit.Router.Route(ev.Record.Tag); e != nil {
-				e.Emit(ev.Record)
+			ev := m.Payload.(*event.Record)
+			if e := unit.Router.Route(ev.Tag); e != nil {
+				e.Emit(ev)
 			} else {
-				i.eng.Emit(ev.Record)
+				i.eng.Emit(ev)
 			}
-		case "terminated":
+		case message.TypTerminated:
 			close(i.doneC)
 			return
 		}
@@ -84,7 +86,7 @@ type ExecUnit struct {
 	pipe    pipe.Pipe
 	pending *pending
 	term    int
-	emitC   chan *event.Event
+	emitC   chan *message.Message
 }
 
 func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
@@ -94,14 +96,14 @@ func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *
 		conf:    conf,
 		bopts:   bopts,
 		pending: newPending(100 * 1024),
-		emitC:   make(chan *event.Event),
+		emitC:   make(chan *message.Message),
 	}
 	go u.pendingLoop()
 	return u
 }
 
 func (u *ExecUnit) Start() error {
-	if err := u.Send(&event.Event{Name: "set_buffer", Buffer: u.bopts}); err != nil {
+	if err := u.Send(&message.Message{Type: message.TypBufferOption, Payload: u.bopts}); err != nil {
 		return err
 	}
 
@@ -109,11 +111,11 @@ func (u *ExecUnit) Start() error {
 	if err != nil {
 		return err
 	}
-	if err := u.Send(&event.Event{Name: "config", Payload: b}); err != nil {
+	if err := u.Send(&message.Message{Type: message.TypConfigure, Payload: b}); err != nil {
 		return err
 	}
 
-	if err := u.Send(&event.Event{Name: "start"}); err != nil {
+	if err := u.Send(&message.Message{Type: message.TypStart}); err != nil {
 		return err
 	}
 
@@ -122,7 +124,7 @@ func (u *ExecUnit) Start() error {
 }
 
 func (u *ExecUnit) Emit(record *event.Record) error {
-	u.emitC <- &event.Event{Name: "record", Record: record}
+	u.emitC <- &message.Message{Type: message.TypEvent, Payload: record}
 	return nil
 }
 
@@ -158,10 +160,10 @@ func (u *ExecUnit) emitLoop() {
 }
 
 func (u *ExecUnit) sendPending(v interface{}) error {
-	return u.Send(v.(*event.Event))
+	return u.Send(v.(*message.Message))
 }
 
-func (u *ExecUnit) Send(ev *event.Event) (err error) {
+func (u *ExecUnit) Send(ev *message.Message) (err error) {
 	ev.UnitID = u.ID
 	return u.pipe.Write(ev)
 }
