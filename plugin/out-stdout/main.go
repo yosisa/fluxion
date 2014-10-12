@@ -8,7 +8,7 @@ import (
 	"text/template"
 
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -42,14 +42,14 @@ func (o *StdoutOutput) Start() error {
 	return nil
 }
 
-func (o *StdoutOutput) Encode(r *event.Record) (buffer.Sizer, error) {
+func (o *StdoutOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
 	var err error
 	b := &bytes.Buffer{}
 	if o.tmpl != nil {
-		err = o.tmpl.Execute(b, r)
+		err = o.tmpl.Execute(b, ev)
 	} else {
-		fmt.Fprintf(b, "[%s] %v: ", r.Tag, r.Time)
-		err = json.NewEncoder(b).Encode(r.Value)
+		fmt.Fprintf(b, "[%s] %v: ", ev.Tag, ev.Time)
+		err = json.NewEncoder(b).Encode(ev.Record)
 	}
 	if err != nil {
 		return nil, err

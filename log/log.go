@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 )
 
 type level int
@@ -39,7 +39,7 @@ const (
 type Logger struct {
 	Name     string
 	Prefix   string
-	EmitFunc func(*event.Record)
+	EmitFunc func(*message.Event)
 }
 
 func (l *Logger) emit(lv level, msg string) {
@@ -49,7 +49,7 @@ func (l *Logger) emit(lv level, msg string) {
 		"level":   lvStr,
 		"message": l.Prefix + msg,
 	}
-	l.EmitFunc(event.NewRecord("fluxion.log."+lvStr, v))
+	l.EmitFunc(message.NewEvent("fluxion.log."+lvStr, v))
 }
 
 func (l *Logger) log(lv level, v ...interface{}) {

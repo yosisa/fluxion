@@ -9,7 +9,6 @@ import (
 
 	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/fluxion/log"
 	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
@@ -25,7 +24,7 @@ type PluginFactory func() Plugin
 
 type Env struct {
 	ReadConfig func(interface{}) error
-	Emit       func(*event.Record)
+	Emit       func(*message.Event)
 	Log        *log.Logger
 }
 
@@ -37,13 +36,13 @@ type Plugin interface {
 
 type OutputPlugin interface {
 	Plugin
-	Encode(*event.Record) (buffer.Sizer, error)
+	Encode(*message.Event) (buffer.Sizer, error)
 	Write([]buffer.Sizer) (int, error)
 }
 
 type FilterPlugin interface {
 	Plugin
-	Filter(*event.Record) (*event.Record, error)
+	Filter(*message.Event) (*message.Event, error)
 }
 
 type plugin struct {
@@ -171,7 +170,7 @@ func (u *execUnit) eventLoop() {
 		case message.TypEvent:
 			switch {
 			case isFilterPlugin:
-				ev := m.Payload.(*event.Record)
+				ev := m.Payload.(*message.Event)
 				r, err := fp.Filter(ev)
 				if err != nil {
 					u.log.Warning("Filter error: ", err)
@@ -181,7 +180,7 @@ func (u *execUnit) eventLoop() {
 					u.send(&message.Message{Type: message.TypEventChain, Payload: r})
 				}
 			case isOutputPlugin:
-				s, err := op.Encode(m.Payload.(*event.Record))
+				s, err := op.Encode(m.Payload.(*message.Event))
 				if err != nil {
 					u.log.Warning("Encode error: ", err)
 					continue
@@ -199,8 +198,8 @@ func (u *execUnit) eventLoop() {
 	close(u.doneC)
 }
 
-func (u *execUnit) emit(record *event.Record) {
-	u.send(&message.Message{Type: message.TypEvent, Payload: record})
+func (u *execUnit) emit(ev *message.Event) {
+	u.send(&message.Message{Type: message.TypEvent, Payload: ev})
 }
 
 func (u *execUnit) send(m *message.Message) {

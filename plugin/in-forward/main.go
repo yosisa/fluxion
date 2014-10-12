@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ugorji/go/codec"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -98,7 +98,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 					i.env.Log.Errorf("Time decode error: %v, skipping", err)
 					continue
 				}
-				r := event.NewRecordWithTime(tag, t, parseValue(v2[1]))
+				r := message.NewEventWithTime(tag, t, parseValue(v2[1]))
 				i.env.Emit(r)
 			}
 		case 3:
@@ -107,7 +107,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				i.env.Log.Errorf("Time decode error: %v, skipping", err)
 				continue
 			}
-			r := event.NewRecordWithTime(tag, t, parseValue(v[2]))
+			r := message.NewEventWithTime(tag, t, parseValue(v[2]))
 			i.env.Emit(r)
 		}
 	}

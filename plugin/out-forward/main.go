@@ -8,7 +8,7 @@ import (
 
 	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -77,13 +77,13 @@ func (o *ForwardOutput) Start() (err error) {
 	return nil
 }
 
-func (o *ForwardOutput) Encode(r *event.Record) (buffer.Sizer, error) {
+func (o *ForwardOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
 	var b []byte
 	var v []interface{}
 	if o.conf.Compatible {
-		v = []interface{}{r.Tag, r.Time.Unix(), r.Value}
+		v = []interface{}{ev.Tag, ev.Time.Unix(), ev.Record}
 	} else {
-		v = []interface{}{r.Tag, r.Time, r.Value}
+		v = []interface{}{ev.Tag, ev.Time, ev.Record}
 	}
 	if err := codec.NewEncoderBytes(&b, o.mh).Encode(v); err != nil {
 		return nil, err

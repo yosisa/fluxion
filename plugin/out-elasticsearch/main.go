@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -58,17 +58,17 @@ func (o *ElasticsearchOutput) Start() error {
 	return nil
 }
 
-func (o *ElasticsearchOutput) Encode(r *event.Record) (buffer.Sizer, error) {
+func (o *ElasticsearchOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
 	index := o.conf.IndexName
 
 	if o.conf.LogstashFormat {
-		if _, ok := r.Value["@timestamp"]; !ok {
-			r.Value["@timestamp"] = r.Time.Format("2006-01-02T15:04:05.000-07:00")
+		if _, ok := ev.Record["@timestamp"]; !ok {
+			ev.Record["@timestamp"] = ev.Time.Format("2006-01-02T15:04:05.000-07:00")
 		}
-		index = r.Time.Format(o.conf.LogstashPrefix + "-" + o.conf.LogstashDateFormat)
+		index = ev.Time.Format(o.conf.LogstashPrefix + "-" + o.conf.LogstashDateFormat)
 	}
 	if o.conf.TagKey != "" {
-		r.Value[o.conf.TagKey] = r.Tag
+		ev.Record[o.conf.TagKey] = ev.Tag
 	}
 
 	action := map[string]string{
@@ -76,12 +76,12 @@ func (o *ElasticsearchOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 		"_type":  o.conf.TypeName,
 	}
 	if o.conf.IDKey != "" {
-		if v, ok := r.Value[o.conf.IDKey].(string); ok {
+		if v, ok := ev.Record[o.conf.IDKey].(string); ok {
 			action["_id"] = v
 		}
 	}
 	if o.conf.ParentKey != "" {
-		if v, ok := r.Value[o.conf.ParentKey].(string); ok {
+		if v, ok := ev.Record[o.conf.ParentKey].(string); ok {
 			action["_parent"] = v
 		}
 	}
@@ -90,7 +90,7 @@ func (o *ElasticsearchOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 	if err != nil {
 		return nil, err
 	}
-	b2, err := json.Marshal(r.Value)
+	b2, err := json.Marshal(ev.Record)
 	if err != nil {
 		return nil, err
 	}

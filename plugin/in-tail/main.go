@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/parser"
 	"github.com/yosisa/fluxion/plugin"
 	"gopkg.in/fsnotify.v1"
@@ -170,20 +170,20 @@ func (l *LineParser) parseLine(line []byte) {
 		return
 	}
 
-	var record *event.Record
+	var ev *message.Event
 	if l.timeKey != "" && l.timeParser != nil {
 		if s, ok := v[l.timeKey].(string); ok {
 			t, err := l.timeParser.Parse(s)
 			if err == nil {
 				delete(v, l.timeKey)
-				record = event.NewRecordWithTime(l.tag, t, v)
+				ev = message.NewEventWithTime(l.tag, t, v)
 			}
 		}
 	}
-	if record == nil {
-		record = event.NewRecord(l.tag, v)
+	if ev == nil {
+		ev = message.NewEvent(l.tag, v)
 	}
-	l.env.Emit(record)
+	l.env.Emit(ev)
 }
 
 type TailHandler func([]byte)

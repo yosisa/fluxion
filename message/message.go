@@ -1,8 +1,10 @@
 package message
 
 import (
+	"io"
+
+	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
 )
 
 type Encoder interface {
@@ -55,11 +57,21 @@ func (m *Message) Decode(dec Decoder) (err error) {
 		err = dec.Decode(&b)
 		m.Payload = b
 	case TypEvent, TypEventChain:
-		var event event.Record
-		err = dec.Decode(&event)
-		m.Payload = &event
+		var ev Event
+		err = dec.Decode(&ev)
+		m.Payload = &ev
 	default:
 		err = dec.Decode(&m.Payload)
 	}
 	return
+}
+
+var mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}
+
+func NewEncoder(w io.Writer) Encoder {
+	return codec.NewEncoder(w, mh)
+}
+
+func NewDecoder(r io.Reader) Decoder {
+	return codec.NewDecoder(r, mh)
 }

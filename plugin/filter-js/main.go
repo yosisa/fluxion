@@ -5,7 +5,7 @@ import (
 
 	"github.com/robertkrimen/otto"
 	_ "github.com/robertkrimen/otto/underscore"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -50,32 +50,27 @@ func (f *JSFilter) Start() error {
 	return nil
 }
 
-func (f *JSFilter) Filter(r *event.Record) (*event.Record, error) {
+func (f *JSFilter) Filter(ev *message.Event) (*message.Event, error) {
 	var dropped bool
-	obj := map[string]interface{}{
+	f.vm.Set("$", map[string]interface{}{
 		"env": f.conf.Env,
 		"event": map[string]interface{}{
-			"tag":    r.Tag,
-			"time":   r.Time,
-			"record": r.Value,
+			"tag":    ev.Tag,
+			"time":   ev.Time,
+			"record": ev.Record,
 		},
 		"drop": func(call otto.FunctionCall) otto.Value {
 			dropped = true
 			return otto.Value{}
 		},
-	}
-	f.vm.Set("$", obj)
-	f.vm.Set("env", f.conf.Env)
-	f.vm.Set("tag", r.Tag)
-	f.vm.Set("time", r.Time)
-	f.vm.Set("record", r.Value)
+	})
 	_, err := f.vm.Run(f.script)
 	if err != nil {
 		return nil, err
 	} else if dropped {
 		return nil, nil
 	}
-	return r, nil
+	return ev, nil
 }
 
 func main() {

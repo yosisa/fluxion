@@ -4,7 +4,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/fluxion/message"
 )
 
@@ -34,8 +33,8 @@ func (p *InProcess) Write(ev *message.Message) error {
 type InterProcess struct {
 	r   io.Reader
 	w   io.Writer
-	enc event.Encoder
-	dec event.Decoder
+	enc message.Encoder
+	dec message.Decoder
 	rm  sync.Mutex
 	wm  sync.Mutex
 }
@@ -44,11 +43,11 @@ func NewInterProcess(r io.Reader, w io.Writer) *InterProcess {
 	p := &InterProcess{}
 	if r != nil {
 		p.r = r
-		p.dec = event.NewDecoder(r)
+		p.dec = message.NewDecoder(r)
 	}
 	if w != nil {
 		p.w = w
-		p.enc = event.NewEncoder(w)
+		p.enc = message.NewEncoder(w)
 	}
 	return p
 }

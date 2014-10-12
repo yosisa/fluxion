@@ -7,14 +7,13 @@ import (
 	"os/exec"
 
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
 )
 
 type Instance struct {
 	eng   *Engine
-	dec   event.Decoder
+	dec   message.Decoder
 	units map[int32]*ExecUnit
 	rp    pipe.Pipe
 	wp    pipe.Pipe
@@ -56,7 +55,7 @@ func (i *Instance) eventLoop() {
 
 		switch m.Type {
 		case message.TypEvent:
-			i.eng.Filter(m.Payload.(*event.Record))
+			i.eng.Filter(m.Payload.(*message.Event))
 		case message.TypEventChain:
 			unit, ok := i.units[m.UnitID]
 			if !ok {
@@ -64,7 +63,7 @@ func (i *Instance) eventLoop() {
 				continue
 			}
 
-			ev := m.Payload.(*event.Record)
+			ev := m.Payload.(*message.Event)
 			if e := unit.Router.Route(ev.Tag); e != nil {
 				e.Emit(ev)
 			} else {
@@ -80,7 +79,7 @@ func (i *Instance) eventLoop() {
 type ExecUnit struct {
 	ID      int32
 	Router  *TagRouter
-	enc     event.Encoder
+	enc     message.Encoder
 	conf    map[string]interface{}
 	bopts   *buffer.Options
 	pipe    pipe.Pipe
@@ -123,8 +122,8 @@ func (u *ExecUnit) Start() error {
 	return nil
 }
 
-func (u *ExecUnit) Emit(record *event.Record) error {
-	u.emitC <- &message.Message{Type: message.TypEvent, Payload: record}
+func (u *ExecUnit) Emit(ev *message.Event) error {
+	u.emitC <- &message.Message{Type: message.TypEvent, Payload: ev}
 	return nil
 }
 
