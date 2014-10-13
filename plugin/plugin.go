@@ -7,7 +7,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/ugorji/go/codec"
+	"github.com/BurntSushi/toml"
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/log"
 	"github.com/yosisa/fluxion/message"
@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	mh              = &codec.MsgpackHandle{RawToString: true}
 	EmbeddedPlugins = make(map[string]PluginFactory)
 	writePipe       *pipe.Pipe
 )
@@ -155,10 +154,11 @@ func (u *execUnit) eventLoop() {
 				buf = buffer.NewMemory(m.Payload.(*buffer.Options), op)
 			}
 		case message.TypConfigure:
-			b := m.Payload.([]byte)
+			s := m.Payload.(string)
 			env := &Env{
 				ReadConfig: func(v interface{}) error {
-					return codec.NewDecoderBytes(b, mh).Decode(v)
+					_, err := toml.Decode(s, v)
+					return err
 				},
 				Emit: u.emit,
 				Log:  u.log,

@@ -14,15 +14,15 @@ import (
 )
 
 type Config struct {
-	URI                string `codec:"uri"`
-	IndexName          string `codec:"index_name"`
-	TypeName           string `codec:"type_name"`
-	LogstashFormat     bool   `codec:"logstash_format"`
-	LogstashPrefix     string `codec:"logstash_prefix"`
-	LogstashDateFormat string `codec:"logstash_dateformat"`
-	TagKey             string `codec:"tag_key"`
-	IDKey              string `codec:"id_key"`
-	ParentKey          string `codec:"parent_key"`
+	URI                string `toml:"uri"`
+	IndexName          string `toml:"index_name"`
+	TypeName           string `toml:"type_name"`
+	LogstashFormat     bool   `toml:"logstash_format"`
+	LogstashPrefix     string `toml:"logstash_prefix"`
+	LogstashDateFormat string `toml:"logstash_dateformat"`
+	TagKey             string `toml:"tag_key"`
+	IDKey              string `toml:"id_key"`
+	ParentKey          string `toml:"parent_key"`
 }
 
 type ElasticsearchOutput struct {

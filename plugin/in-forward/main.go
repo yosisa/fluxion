@@ -15,7 +15,7 @@ import (
 var mh = &codec.MsgpackHandle{RawToString: true}
 
 type Config struct {
-	Bind string `codec:"bind"`
+	Bind string `toml:"bind"`
 }
 
 type ForwardInput struct {

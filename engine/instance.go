@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"bytes"
 	"container/list"
 	"log"
 	"os"
 	"os/exec"
 
+	"github.com/BurntSushi/toml"
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
@@ -111,15 +113,9 @@ func (u *ExecUnit) Start() error {
 	if err := u.Send(&message.Message{Type: message.TypBufferOption, Payload: u.bopts}); err != nil {
 		return err
 	}
-
-	b, err := Encode(u.conf)
-	if err != nil {
+	if err := u.Send(&message.Message{Type: message.TypConfigure, Payload: encodeConf(u.conf)}); err != nil {
 		return err
 	}
-	if err := u.Send(&message.Message{Type: message.TypConfigure, Payload: b}); err != nil {
-		return err
-	}
-
 	if err := u.Send(&message.Message{Type: message.TypStart}); err != nil {
 		return err
 	}
@@ -212,4 +208,13 @@ func prepareFuncFactory(i *Instance) func(*exec.Cmd) {
 		i.wp = pipe.NewInterProcess(nil, w)
 		i.Start()
 	}
+}
+
+func encodeConf(conf map[string]interface{}) string {
+	b := new(bytes.Buffer)
+	if err := toml.NewEncoder(b).Encode(conf); err != nil {
+		// Usually not reached because conf is decoded from toml
+		panic(err)
+	}
+	return b.String()
 }

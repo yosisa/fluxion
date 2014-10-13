@@ -16,14 +16,14 @@ import (
 var posFiles = make(map[string]*PositionFile)
 
 type Config struct {
-	Tag          string `codec:"tag"`
-	Path         string `codec:"path"`
-	PosFile      string `codec:"pos_file"`
-	Format       string `codec:"format"`
-	TimeKey      string `codec:"time_key"`
-	TimeFormat   string `codec:"time_format"`
-	TimeZone     string `codec:"timezone"`
-	ReadFromHead bool   `codec:"read_from_head"`
+	Tag          string `toml:"tag"`
+	Path         string `toml:"path"`
+	PosFile      string `toml:"pos_file"`
+	Format       string `toml:"format"`
+	TimeKey      string `toml:"time_key"`
+	TimeFormat   string `toml:"time_format"`
+	TimeZone     string `toml:"timezone"`
+	ReadFromHead bool   `toml:"read_from_head"`
 }
 
 type TailInput struct {

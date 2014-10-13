@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	Script     string                 `codec:"script"`
-	ScriptFile string                 `codec:"script_file"`
-	Env        map[string]interface{} `codec:"env"`
+	Script     string                 `toml:"script"`
+	ScriptFile string                 `toml:"script_file"`
+	Env        map[string]interface{} `toml:"env"`
 }
 
 type JSFilter struct {

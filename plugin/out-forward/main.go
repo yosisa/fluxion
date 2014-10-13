@@ -13,13 +13,13 @@ import (
 )
 
 type Config struct {
-	MinWeight  int  `codec:"min_weight"`
-	Compatible bool `codec:"compatible"`
+	MinWeight  int  `toml:"min_weight"`
+	Compatible bool `toml:"compatible"`
 
 	Servers []struct {
-		Server string `codec:"server"`
-		Weight int    `codec:"weight"`
-	} `codec:"servers"`
+		Server string `toml:"server"`
+		Weight int    `toml:"weight"`
+	} `toml:"servers"`
 }
 
 type ForwardOutput struct {

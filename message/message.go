@@ -57,9 +57,9 @@ func (m *Message) Decode(dec Decoder) (err error) {
 		err = dec.Decode(&opts)
 		m.Payload = &opts
 	case TypConfigure:
-		var b []byte
-		err = dec.Decode(&b)
-		m.Payload = b
+		var s string
+		err = dec.Decode(&s)
+		m.Payload = s
 	case TypEvent, TypEventChain:
 		var ev Event
 		err = dec.Decode(&ev)

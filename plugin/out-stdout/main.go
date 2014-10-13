@@ -13,7 +13,7 @@ import (
 )
 
 type Config struct {
-	Format string `codec:"format"`
+	Format string `toml:"format"`
 }
 
 type StdoutOutput struct {
