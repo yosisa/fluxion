@@ -1,27 +1,31 @@
 package engine
 
 import (
+	"bytes"
 	"container/list"
 	"log"
 	"os"
 	"os/exec"
 
+	"github.com/BurntSushi/toml"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
 )
 
 type Instance struct {
+	name  string
 	eng   *Engine
-	dec   event.Decoder
+	dec   message.Decoder
 	units map[int32]*ExecUnit
 	rp    pipe.Pipe
 	wp    pipe.Pipe
 	doneC chan bool
 }
 
-func NewInstance(eng *Engine) *Instance {
+func NewInstance(name string, eng *Engine) *Instance {
 	return &Instance{
+		name:  name,
 		eng:   eng,
 		units: make(map[int32]*ExecUnit),
 		doneC: make(chan bool),
@@ -34,41 +38,46 @@ func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buf
 }
 
 func (i *Instance) Start() {
-	for _, u := range i.units {
-		u.pipe = i.wp
-		u.Start()
-	}
+	i.wp.Write(&message.Message{Type: message.TypInfoRequest})
 	go i.eventLoop()
 }
 
 func (i *Instance) Stop() {
-	i.wp.Write(&event.Event{Name: "stop"})
+	i.wp.Write(&message.Message{Type: message.TypStop})
 	<-i.doneC
 }
 
 func (i *Instance) eventLoop() {
 	for {
-		ev, err := i.rp.Read()
+		m, err := i.rp.Read()
 		if err != nil {
 			return
 		}
 
-		switch ev.Name {
-		case "record":
-			i.eng.Filter(ev.Record)
-		case "next_filter":
-			unit, ok := i.units[ev.UnitID]
+		switch m.Type {
+		case message.TypInfoResponse:
+			info := m.Payload.(*message.PluginInfo)
+			i.eng.log.Infof("%s plugin: protocol version %d", i.name, info.ProtoVer)
+			for _, u := range i.units {
+				u.pipe = i.wp
+				u.Start()
+			}
+		case message.TypEvent:
+			i.eng.Filter(m.Payload.(*message.Event))
+		case message.TypEventChain:
+			unit, ok := i.units[m.UnitID]
 			if !ok {
-				log.Printf("Unit ID %d not known", ev.UnitID)
+				log.Printf("Unit ID %d not known", m.UnitID)
 				continue
 			}
 
-			if e := unit.Router.Route(ev.Record.Tag); e != nil {
-				e.Emit(ev.Record)
+			ev := m.Payload.(*message.Event)
+			if e := unit.Router.Route(ev.Tag); e != nil {
+				e.Emit(ev)
 			} else {
-				i.eng.Emit(ev.Record)
+				i.eng.Emit(ev)
 			}
-		case "terminated":
+		case message.TypTerminated:
 			close(i.doneC)
 			return
 		}
@@ -78,13 +87,13 @@ func (i *Instance) eventLoop() {
 type ExecUnit struct {
 	ID      int32
 	Router  *TagRouter
-	enc     event.Encoder
+	enc     message.Encoder
 	conf    map[string]interface{}
 	bopts   *buffer.Options
 	pipe    pipe.Pipe
 	pending *pending
 	term    int
-	emitC   chan *event.Event
+	emitC   chan *message.Message
 }
 
 func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *ExecUnit {
@@ -94,26 +103,20 @@ func newExecUnit(id int32, conf map[string]interface{}, bopts *buffer.Options) *
 		conf:    conf,
 		bopts:   bopts,
 		pending: newPending(100 * 1024),
-		emitC:   make(chan *event.Event),
+		emitC:   make(chan *message.Message),
 	}
 	go u.pendingLoop()
 	return u
 }
 
 func (u *ExecUnit) Start() error {
-	if err := u.Send(&event.Event{Name: "set_buffer", Buffer: u.bopts}); err != nil {
+	if err := u.Send(&message.Message{Type: message.TypBufferOption, Payload: u.bopts}); err != nil {
 		return err
 	}
-
-	b, err := Encode(u.conf)
-	if err != nil {
+	if err := u.Send(&message.Message{Type: message.TypConfigure, Payload: encodeConf(u.conf)}); err != nil {
 		return err
 	}
-	if err := u.Send(&event.Event{Name: "config", Payload: b}); err != nil {
-		return err
-	}
-
-	if err := u.Send(&event.Event{Name: "start"}); err != nil {
+	if err := u.Send(&message.Message{Type: message.TypStart}); err != nil {
 		return err
 	}
 
@@ -121,8 +124,8 @@ func (u *ExecUnit) Start() error {
 	return nil
 }
 
-func (u *ExecUnit) Emit(record *event.Record) error {
-	u.emitC <- &event.Event{Name: "record", Record: record}
+func (u *ExecUnit) Emit(ev *message.Event) error {
+	u.emitC <- &message.Message{Type: message.TypEvent, Payload: ev}
 	return nil
 }
 
@@ -158,10 +161,10 @@ func (u *ExecUnit) emitLoop() {
 }
 
 func (u *ExecUnit) sendPending(v interface{}) error {
-	return u.Send(v.(*event.Event))
+	return u.Send(v.(*message.Message))
 }
 
-func (u *ExecUnit) Send(ev *event.Event) (err error) {
+func (u *ExecUnit) Send(ev *message.Message) (err error) {
 	ev.UnitID = u.ID
 	return u.pipe.Write(ev)
 }
@@ -205,4 +208,13 @@ func prepareFuncFactory(i *Instance) func(*exec.Cmd) {
 		i.wp = pipe.NewInterProcess(nil, w)
 		i.Start()
 	}
+}
+
+func encodeConf(conf map[string]interface{}) string {
+	b := new(bytes.Buffer)
+	if err := toml.NewEncoder(b).Encode(conf); err != nil {
+		// Usually not reached because conf is decoded from toml
+		panic(err)
+	}
+	return b.String()
 }

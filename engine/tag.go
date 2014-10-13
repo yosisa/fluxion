@@ -4,11 +4,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 )
 
 type Emitter interface {
-	Emit(*event.Record) error
+	Emit(*message.Event) error
 }
 
 type TagRouter struct {

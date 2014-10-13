@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
 	"github.com/yosisa/fluxion/log"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/pipe"
 	"github.com/yosisa/fluxion/plugin"
 	"github.com/yosisa/pave/process"
@@ -61,7 +61,7 @@ func (e *Engine) pluginInstance(name string) *Instance {
 	if ins, ok := e.plugins[name]; ok {
 		return ins
 	}
-	ins := NewInstance(e)
+	ins := NewInstance(name, e)
 	e.plugins[name] = ins
 
 	if f, ok := plugin.EmbeddedPlugins[name]; ok {
@@ -133,18 +133,18 @@ func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) error {
 	return nil
 }
 
-func (e *Engine) Filter(record *event.Record) {
-	if ins := e.ftr.Route(record.Tag); ins != nil {
-		ins.Emit(record)
+func (e *Engine) Filter(ev *message.Event) {
+	if ins := e.ftr.Route(ev.Tag); ins != nil {
+		ins.Emit(ev)
 	} else {
-		e.Emit(record)
+		e.Emit(ev)
 	}
 }
 
-func (e *Engine) Emit(record *event.Record) {
+func (e *Engine) Emit(ev *message.Event) {
 	for _, tr := range e.tr {
-		if ins := tr.Route(record.Tag); ins != nil {
-			ins.Emit(record)
+		if ins := tr.Route(ev.Tag); ins != nil {
+			ins.Emit(ev)
 		}
 	}
 }
