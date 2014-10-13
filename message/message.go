@@ -48,6 +48,10 @@ func (m *Message) Decode(dec Decoder) (err error) {
 	}
 
 	switch m.Type {
+	case TypInfoResponse:
+		var info PluginInfo
+		err = dec.Decode(&info)
+		m.Payload = &info
 	case TypBufferOption:
 		var opts buffer.Options
 		err = dec.Decode(&opts)
@@ -64,6 +68,10 @@ func (m *Message) Decode(dec Decoder) (err error) {
 		err = dec.Decode(&m.Payload)
 	}
 	return
+}
+
+type PluginInfo struct {
+	ProtoVer uint8 `codec:"proto_ver"`
 }
 
 var mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}

@@ -61,7 +61,7 @@ func (e *Engine) pluginInstance(name string) *Instance {
 	if ins, ok := e.plugins[name]; ok {
 		return ins
 	}
-	ins := NewInstance(e)
+	ins := NewInstance(name, e)
 	e.plugins[name] = ins
 
 	if f, ok := plugin.EmbeddedPlugins[name]; ok {

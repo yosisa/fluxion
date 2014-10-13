@@ -77,6 +77,11 @@ func (p *plugin) eventLoop(pipe pipe.Pipe) {
 		}
 
 		switch m.Type {
+		case message.TypInfoRequest:
+			p.pipe.Write(&message.Message{
+				Type:    message.TypInfoResponse,
+				Payload: &message.PluginInfo{ProtoVer: 1},
+			})
 		case message.TypStop:
 			p.stop()
 			p.pipe.Write(&message.Message{Type: message.TypTerminated})

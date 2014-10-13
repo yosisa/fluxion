@@ -12,6 +12,7 @@ import (
 )
 
 type Instance struct {
+	name  string
 	eng   *Engine
 	dec   message.Decoder
 	units map[int32]*ExecUnit
@@ -20,8 +21,9 @@ type Instance struct {
 	doneC chan bool
 }
 
-func NewInstance(eng *Engine) *Instance {
+func NewInstance(name string, eng *Engine) *Instance {
 	return &Instance{
+		name:  name,
 		eng:   eng,
 		units: make(map[int32]*ExecUnit),
 		doneC: make(chan bool),
@@ -34,10 +36,7 @@ func (i *Instance) AddExecUnit(id int32, conf map[string]interface{}, bopts *buf
 }
 
 func (i *Instance) Start() {
-	for _, u := range i.units {
-		u.pipe = i.wp
-		u.Start()
-	}
+	i.wp.Write(&message.Message{Type: message.TypInfoRequest})
 	go i.eventLoop()
 }
 
@@ -54,6 +53,13 @@ func (i *Instance) eventLoop() {
 		}
 
 		switch m.Type {
+		case message.TypInfoResponse:
+			info := m.Payload.(*message.PluginInfo)
+			i.eng.log.Infof("%s plugin: protocol version %d", i.name, info.ProtoVer)
+			for _, u := range i.units {
+				u.pipe = i.wp
+				u.Start()
+			}
 		case message.TypEvent:
 			i.eng.Filter(m.Payload.(*message.Event))
 		case message.TypEventChain:
