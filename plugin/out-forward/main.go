@@ -30,10 +30,6 @@ type ForwardOutput struct {
 	mh   *codec.MsgpackHandle
 }
 
-func (o *ForwardOutput) Name() string {
-	return "out-forward"
-}
-
 func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	o.env = env
 	o.conf = &Config{}
@@ -102,7 +98,7 @@ func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("out-forward", func() plugin.Plugin {
 		return &ForwardOutput{}
 	}).Run()
 }

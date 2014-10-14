@@ -36,10 +36,6 @@ type TailInput struct {
 	watchers   map[string]*Watcher
 }
 
-func (i *TailInput) Name() string {
-	return "in-tail"
-}
-
 func (i *TailInput) Init(env *plugin.Env) (err error) {
 	i.env = env
 	i.conf = &Config{}
@@ -308,7 +304,7 @@ func (w *Watcher) notify() {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("in-tail", func() plugin.Plugin {
 		return &TailInput{}
 	}).Run()
 }

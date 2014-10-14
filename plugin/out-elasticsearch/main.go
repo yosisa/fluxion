@@ -31,10 +31,6 @@ type ElasticsearchOutput struct {
 	client *http.Client
 }
 
-func (o *ElasticsearchOutput) Name() string {
-	return "out-elasticsearch"
-}
-
 func (o *ElasticsearchOutput) Init(env *plugin.Env) error {
 	o.env = env
 	o.conf = &Config{}
@@ -121,7 +117,7 @@ func (o *ElasticsearchOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("out-elasticsearch", func() plugin.Plugin {
 		return &ElasticsearchOutput{}
 	}).Run()
 }

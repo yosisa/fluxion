@@ -25,10 +25,6 @@ type ForwardInput struct {
 	udpConn *net.UDPConn
 }
 
-func (i *ForwardInput) Name() string {
-	return "in-forward"
-}
-
 func (i *ForwardInput) Init(env *plugin.Env) error {
 	i.env = env
 	i.conf = &Config{}
@@ -159,7 +155,7 @@ func parseValue(v interface{}) map[string]interface{} {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("in-forward", func() plugin.Plugin {
 		return &ForwardInput{}
 	}).Run()
 }

@@ -69,7 +69,7 @@ func (e *Engine) pluginInstance(name string) *Instance {
 		p2 := pipe.NewInProcess()
 		ins.rp = p1
 		ins.wp = p2
-		go plugin.New(f).RunWithPipe(p2, p1)
+		go plugin.New(name, f).RunWithPipe(p2, p1)
 		e.embeds = append(e.embeds, ins)
 	} else {
 		e.pm.Add(process.New("fluxion-"+name, prepareFuncFactory(ins), func(err error) {

@@ -28,7 +28,6 @@ type Env struct {
 }
 
 type Plugin interface {
-	Name() string
 	Init(*Env) error
 	Start() error
 }
@@ -45,13 +44,15 @@ type FilterPlugin interface {
 }
 
 type plugin struct {
+	name  string
 	f     PluginFactory
 	units map[int32]*execUnit
 	pipe  pipe.Pipe
 }
 
-func New(f PluginFactory) *plugin {
+func New(name string, f PluginFactory) *plugin {
 	return &plugin{
+		name:  name,
 		f:     f,
 		units: make(map[int32]*execUnit),
 	}
@@ -88,7 +89,7 @@ func (p *plugin) eventLoop(pipe pipe.Pipe) {
 		default:
 			unit, ok := p.units[m.UnitID]
 			if !ok {
-				unit = newExecUnit(m.UnitID, p.f(), p.pipe)
+				unit = newExecUnit(m.UnitID, p.name, p.f(), p.pipe)
 				p.units[m.UnitID] = unit
 			}
 			unit.msgC <- m
@@ -117,6 +118,7 @@ func (p *plugin) signalHandler() {
 
 type execUnit struct {
 	ID    int32
+	name  string
 	p     Plugin
 	msgC  chan *message.Message
 	doneC chan bool
@@ -124,17 +126,18 @@ type execUnit struct {
 	log   *log.Logger
 }
 
-func newExecUnit(id int32, p Plugin, pipe pipe.Pipe) *execUnit {
+func newExecUnit(id int32, name string, p Plugin, pipe pipe.Pipe) *execUnit {
 	u := &execUnit{
 		ID:    id,
+		name:  name,
 		p:     p,
 		msgC:  make(chan *message.Message, 100),
 		doneC: make(chan bool),
 		pipe:  pipe,
 	}
 	u.log = &log.Logger{
-		Name:     p.Name(),
-		Prefix:   fmt.Sprintf("[%02d:%s] ", id, p.Name()),
+		Name:     name,
+		Prefix:   fmt.Sprintf("[%02d:%s] ", id, name),
 		EmitFunc: u.emit,
 	}
 	go u.eventLoop()

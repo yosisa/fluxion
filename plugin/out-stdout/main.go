@@ -22,10 +22,6 @@ type StdoutOutput struct {
 	tmpl *template.Template
 }
 
-func (o *StdoutOutput) Name() string {
-	return "out-stdout"
-}
-
 func (o *StdoutOutput) Init(env *plugin.Env) (err error) {
 	o.env = env
 	o.conf = &Config{}
@@ -65,7 +61,7 @@ func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("out-stdout", func() plugin.Plugin {
 		return &StdoutOutput{}
 	}).Run()
 }

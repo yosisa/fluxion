@@ -22,10 +22,6 @@ type JSFilter struct {
 	script *otto.Script
 }
 
-func (f *JSFilter) Name() string {
-	return "filter-js"
-}
-
 func (f *JSFilter) Init(env *plugin.Env) (err error) {
 	f.env = env
 	f.conf = &Config{}
@@ -74,7 +70,7 @@ func (f *JSFilter) Filter(ev *message.Event) (*message.Event, error) {
 }
 
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("filter-js", func() plugin.Plugin {
 		return &JSFilter{}
 	}).Run()
 }
