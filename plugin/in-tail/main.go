@@ -160,10 +160,12 @@ type LineParser struct {
 	timeKey    string
 }
 
-func (l *LineParser) parseLine(line []byte) {
-	v, err := l.parser.Parse(string(line))
+func (l *LineParser) parseLine(b []byte) {
+	line := string(b)
+	v, err := l.parser.Parse(line)
 	if err != nil {
-		return
+		l.env.Log.Warningf("Line parser failed: %v, use default parser: %s", err, line)
+		v, _ = parser.DefaultParser.Parse(line)
 	}
 
 	var ev *message.Event
@@ -173,7 +175,11 @@ func (l *LineParser) parseLine(line []byte) {
 			if err == nil {
 				delete(v, l.timeKey)
 				ev = message.NewEventWithTime(l.tag, t, v)
+			} else {
+				l.env.Log.Warningf("Time parser failed: %v", err)
 			}
+		} else {
+			l.env.Log.Warning("Time key configured, but not exists")
 		}
 	}
 	if ev == nil {

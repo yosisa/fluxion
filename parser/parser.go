@@ -15,12 +15,14 @@ func (f ParserFunc) Parse(s string) (map[string]interface{}, error) {
 	return f(s)
 }
 
+var nopParser = ParserFunc(func(s string) (map[string]interface{}, error) {
+	return map[string]interface{}{"message": s}, nil
+})
+
 func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
 	switch format {
 	case "":
-		p = ParserFunc(func(s string) (map[string]interface{}, error) {
-			return map[string]interface{}{"message": s}, nil
-		})
+		p = nopParser
 	case "ltsv":
 		p = &LTSVParser{}
 	case "nginx":
@@ -35,3 +37,5 @@ func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
 	}
 	return
 }
+
+var DefaultParser = nopParser
