@@ -136,7 +136,9 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	case uint64:
 		n = int64(typed)
 	case float64:
-		n = int64(typed)
+		nsec := int64((typed - float64(int64(typed))) * 1e9)
+		t = time.Unix(int64(typed), nsec)
+		return
 	default:
 		if n, err = strconv.ParseInt(fmt.Sprintf("%v", typed), 10, 64); err != nil {
 			return
