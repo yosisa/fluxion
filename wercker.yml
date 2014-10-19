@@ -8,6 +8,13 @@ build:
           go version
           go get -t ./...
     - script:
+        name: go test and cover
+        code: |
+          go get github.com/mattn/goveralls
+          echo "mode: count" > profile.cov
+          for d in $(git ls-files | grep '_test.go$' | sed -E 's,/?[^/]*$,,' | uniq); do go test -covermode=count -coverprofile=$d/profile.tmp ./$d && tail -n +2 $d/profile.tmp >> profile.cov; done
+          goveralls -coverprofile=profile.cov -service=wercker.com -repotoken $COVERALLS_TOKEN
+    - script:
         name: gox fluxion
         code: |
           gox -os="linux darwin" -arch="amd64" -output "${WERCKER_OUTPUT_DIR}/pkg/fluxion_{{.OS}}_{{.Arch}}/{{.Dir}}"
