@@ -92,7 +92,7 @@ func (e *Engine) RegisterInputPlugin(conf map[string]interface{}) {
 
 func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) error {
 	bufName := "default"
-	if name, ok := conf["buffer_name"].(string); ok {
+	if name, ok := conf["buffer"].(string); ok {
 		bufName = name
 	}
 	buf, ok := e.bufs[bufName]
