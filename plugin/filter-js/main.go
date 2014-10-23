@@ -69,6 +69,10 @@ func (f *JSFilter) Filter(ev *message.Event) (*message.Event, error) {
 	return ev, nil
 }
 
+func (f *JSFilter) Close() error {
+	return nil
+}
+
 func main() {
 	plugin.New("filter-js", func() plugin.Plugin {
 		return &JSFilter{}

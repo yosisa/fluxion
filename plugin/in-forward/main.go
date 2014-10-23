@@ -23,6 +23,7 @@ type ForwardInput struct {
 	conf    *Config
 	ln      net.Listener
 	udpConn *net.UDPConn
+	closed  bool
 }
 
 func (i *ForwardInput) Init(env *plugin.Env) error {
@@ -54,8 +55,18 @@ func (i *ForwardInput) Start() error {
 	return nil
 }
 
+func (i *ForwardInput) Close() error {
+	i.closed = true
+	err1 := i.ln.Close()
+	err2 := i.udpConn.Close()
+	if err1 != nil {
+		return err1
+	}
+	return err2
+}
+
 func (i *ForwardInput) accept() {
-	for {
+	for !i.closed {
 		conn, err := i.ln.Accept()
 		if err != nil {
 			continue
@@ -114,6 +125,9 @@ func (i *ForwardInput) heartbeatHandler() {
 	res := []byte{0}
 	for {
 		_, remote, err := i.udpConn.ReadFromUDP(buf)
+		if i.closed {
+			return
+		}
 		if err != nil {
 			i.env.Log.Warning(err)
 			continue

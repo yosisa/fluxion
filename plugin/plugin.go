@@ -30,6 +30,7 @@ type Env struct {
 type Plugin interface {
 	Init(*Env) error
 	Start() error
+	Close() error
 }
 
 type OutputPlugin interface {
@@ -201,6 +202,7 @@ func (u *execUnit) eventLoop() {
 			if isOutputPlugin {
 				buf.Close()
 			}
+			u.p.Close()
 		}
 	}
 	close(u.doneC)

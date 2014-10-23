@@ -116,6 +116,10 @@ func (o *ElasticsearchOutput) Write(l []buffer.Sizer) (int, error) {
 	return len(l), nil
 }
 
+func (o *ElasticsearchOutput) Close() error {
+	return nil
+}
+
 func main() {
 	plugin.New("out-elasticsearch", func() plugin.Plugin {
 		return &ElasticsearchOutput{}

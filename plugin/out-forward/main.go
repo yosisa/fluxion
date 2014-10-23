@@ -97,6 +97,10 @@ func (o *ForwardOutput) Write(l []buffer.Sizer) (int, error) {
 	return len(l), nil
 }
 
+func (o *ForwardOutput) Close() error {
+	return nil
+}
+
 func main() {
 	plugin.New("out-forward", func() plugin.Plugin {
 		return &ForwardOutput{}

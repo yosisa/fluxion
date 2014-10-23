@@ -60,6 +60,10 @@ func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
 	return len(l), nil
 }
 
+func (o *StdoutOutput) Close() error {
+	return nil
+}
+
 func main() {
 	plugin.New("out-stdout", func() plugin.Plugin {
 		return &StdoutOutput{}

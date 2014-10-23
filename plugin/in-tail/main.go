@@ -72,6 +72,10 @@ func (i *TailInput) Start() (err error) {
 	return
 }
 
+func (i *TailInput) Close() error {
+	return i.fsw.Close()
+}
+
 func (i *TailInput) fsEventHandler() {
 	for {
 		select {
