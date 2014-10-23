@@ -36,6 +36,8 @@ const (
 	lvCritical
 )
 
+var hostname, _ = os.Hostname()
+
 type Logger struct {
 	Name     string
 	Prefix   string
@@ -46,6 +48,7 @@ func (l *Logger) emit(lv level, msg string) {
 	lvStr := lv.String()
 	v := map[string]interface{}{
 		"name":    l.Name,
+		"host":    hostname,
 		"level":   lvStr,
 		"message": l.Prefix + msg,
 	}
