@@ -16,14 +16,9 @@ type TagRouter struct {
 	values   []Emitter
 }
 
-func (t *TagRouter) Add(pattern string, e Emitter) error {
-	re, err := compileTag(pattern)
-	if err != nil {
-		return err
-	}
+func (t *TagRouter) Add(re *regexp.Regexp, e Emitter) {
 	t.patterns = append(t.patterns, re)
 	t.values = append(t.values, e)
-	return nil
 }
 
 func (t *TagRouter) Route(tag string) Emitter {

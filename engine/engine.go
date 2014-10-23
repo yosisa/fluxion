@@ -5,6 +5,7 @@ import (
 	glog "log"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,9 +109,11 @@ func (e *Engine) RegisterOutputPlugin(name string, conf map[string]interface{}) 
 		tr = &TagRouter{}
 		e.tr[name] = tr
 	}
-	if err := tr.Add(conf["match"].(string), unit); err != nil {
+	re, err := regexp.Compile(conf["match"].(string))
+	if err != nil {
 		return err
 	}
+	tr.Add(re, unit)
 	return nil
 }
 
@@ -118,16 +121,15 @@ func (e *Engine) RegisterFilterPlugin(conf map[string]interface{}) error {
 	ins := e.pluginInstance("filter-" + conf["type"].(string))
 	unit := e.addExecUnit(ins, conf, nil)
 
-	pattern := conf["match"].(string)
-	if err := e.ftr.Add(pattern, unit); err != nil {
+	re, err := regexp.Compile(conf["match"].(string))
+	if err != nil {
 		return err
 	}
+	e.ftr.Add(re, unit)
 
 	// Register new filter to the preceding filters
 	for _, f := range e.filters {
-		if err := f.Router.Add(pattern, unit); err != nil {
-			return err
-		}
+		f.Router.Add(re, unit)
 	}
 	e.filters = append(e.filters, unit)
 	return nil
