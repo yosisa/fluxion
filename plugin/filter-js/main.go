@@ -2,6 +2,7 @@ package main
 
 import (
 	"io/ioutil"
+	"time"
 
 	"github.com/robertkrimen/otto"
 	_ "github.com/robertkrimen/otto/underscore"
@@ -58,6 +59,40 @@ func (f *JSFilter) Filter(ev *message.Event) (*message.Event, error) {
 		"drop": func(call otto.FunctionCall) otto.Value {
 			dropped = true
 			return otto.Value{}
+		},
+		"emit": func(call otto.FunctionCall) (ret otto.Value) {
+			var record otto.Value
+			var t time.Time
+			tag := call.Argument(0).String()
+			if !call.Argument(2).IsDefined() {
+				record = call.Argument(1)
+				t = time.Now()
+			} else {
+				record = call.Argument(2)
+				v, err := call.Argument(1).Export()
+				if err != nil {
+					f.env.Log.Warningf("Failed to get time: %v", err)
+					return
+				}
+				var ok bool
+				t, ok = v.(time.Time)
+				if !ok {
+					f.env.Log.Warningf("Failed to get time: unsupported type %T", v)
+					return
+				}
+			}
+			rec, err := record.Export()
+			if err != nil {
+				f.env.Log.Warningf("Failed to get record: %v", err)
+				return
+			}
+			typedRec, ok := rec.(map[string]interface{})
+			if !ok {
+				f.env.Log.Warningf("Failed to get record: Unsupported type %T", rec)
+				return
+			}
+			f.env.Emit(message.NewEventWithTime(tag, t, typedRec))
+			return
 		},
 	})
 	_, err := f.vm.Run(f.script)
