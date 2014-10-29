@@ -1,7 +1,9 @@
 package plugin
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -61,6 +63,15 @@ func New(name string, f PluginFactory) *plugin {
 
 func (p *plugin) Run() {
 	p.pipe = pipe.NewInterProcess(nil, os.Stdout)
+	// Redirect os.Stdout, because plugins maybe write to stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Stdout = w
+	go p.stdoutTransfer(r)
+
 	go p.signalHandler()
 	p.eventLoop(pipe.NewInterProcess(os.Stdin, nil))
 }
@@ -108,6 +119,26 @@ func (p *plugin) stop() {
 		}(unit)
 	}
 	wg.Wait()
+}
+
+func (p *plugin) stdoutTransfer(f *os.File) {
+	defer f.Close()
+	r := bufio.NewReader(f)
+	b := make([]byte, 4096)
+	for {
+		n, err := r.Read(b)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			return
+		}
+		read := b[:n]
+		p.pipe.Write(&message.Message{
+			Type:    message.TypStdout,
+			Payload: read,
+		})
+	}
 }
 
 func (p *plugin) signalHandler() {

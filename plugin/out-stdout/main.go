@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/template"
 
 	"github.com/yosisa/fluxion/buffer"
@@ -55,7 +54,7 @@ func (o *StdoutOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
 
 func (o *StdoutOutput) Write(l []buffer.Sizer) (int, error) {
 	for _, s := range l {
-		fmt.Fprintf(os.Stderr, "%s\n", s)
+		fmt.Printf("%s\n", s)
 	}
 	return len(l), nil
 }

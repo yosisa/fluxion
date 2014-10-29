@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"container/list"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -77,6 +78,8 @@ func (i *Instance) eventLoop() {
 			} else {
 				i.eng.Emit(ev)
 			}
+		case message.TypStdout:
+			fmt.Printf("%s", m.Payload.([]byte))
 		case message.TypTerminated:
 			close(i.doneC)
 			return

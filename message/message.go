@@ -27,6 +27,7 @@ const (
 	TypTerminated
 	TypEvent
 	TypEventChain
+	TypStdout
 )
 
 type Message struct {
