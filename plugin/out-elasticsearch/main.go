@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"github.com/yosisa/fluxion/buffer"
 	"github.com/yosisa/fluxion/message"
@@ -29,6 +30,7 @@ type ElasticsearchOutput struct {
 	env    *plugin.Env
 	conf   *Config
 	client *http.Client
+	utc    *time.Location
 }
 
 func (o *ElasticsearchOutput) Init(env *plugin.Env) error {
@@ -46,6 +48,7 @@ func (o *ElasticsearchOutput) Init(env *plugin.Env) error {
 	if o.conf.LogstashDateFormat == "" {
 		o.conf.LogstashDateFormat = "2006.01.02"
 	}
+	o.utc, _ = time.LoadLocation("")
 	return nil
 }
 
@@ -61,7 +64,7 @@ func (o *ElasticsearchOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
 		if _, ok := ev.Record["@timestamp"]; !ok {
 			ev.Record["@timestamp"] = ev.Time.Format("2006-01-02T15:04:05.000-07:00")
 		}
-		index = ev.Time.Format(o.conf.LogstashPrefix + "-" + o.conf.LogstashDateFormat)
+		index = ev.Time.In(o.utc).Format(o.conf.LogstashPrefix + "-" + o.conf.LogstashDateFormat)
 	}
 	if o.conf.TagKey != "" {
 		ev.Record[o.conf.TagKey] = ev.Tag
