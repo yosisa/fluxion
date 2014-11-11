@@ -39,7 +39,11 @@ func (r *PositionReader) ReadLine() (line []byte, isPrefix bool, err error) {
 		if err != nil {
 			return
 		}
-		r.pos++
+		// If isPrefix is true, it means no the end-of-line bytes skipped.
+		// So we must not increment position for that bytes.
+		if !isPrefix {
+			r.pos++
+		}
 		if n := len(line); n > 0 {
 			r.pos += int64(n)
 			r.pe.SetPos(r.pos)
