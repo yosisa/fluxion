@@ -2,6 +2,7 @@ package message
 
 import (
 	"io"
+	"reflect"
 
 	"github.com/ugorji/go/codec"
 	"github.com/yosisa/fluxion/buffer"
@@ -83,4 +84,8 @@ func NewEncoder(w io.Writer) Encoder {
 
 func NewDecoder(r io.Reader) Decoder {
 	return codec.NewDecoder(r, mh)
+}
+
+func init() {
+	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 }
