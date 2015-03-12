@@ -32,7 +32,7 @@ type TailInput struct {
 	env        *plugin.Env
 	conf       *Config
 	parser     parser.Parser
-	timeParser *parser.TimeParser
+	timeParser parser.TimeParser
 	rparser    parser.Parser
 	pf         *PositionFile
 	fsw        *fsnotify.Watcher
@@ -170,7 +170,7 @@ type LineParser struct {
 	env        *plugin.Env
 	tag        string
 	parser     parser.Parser
-	timeParser *parser.TimeParser
+	timeParser parser.TimeParser
 	timeKey    string
 	rkey       string
 	rparser    parser.Parser
@@ -199,8 +199,8 @@ func (l *LineParser) makeEvent(v map[string]interface{}) *message.Event {
 		}
 	}
 	if l.timeKey != "" && l.timeParser != nil {
-		if s, ok := v[l.timeKey].(string); ok {
-			t, err := l.timeParser.Parse(s)
+		if val, ok := v[l.timeKey]; ok {
+			t, err := l.timeParser.Parse(val)
 			if err == nil {
 				delete(v, l.timeKey)
 				return message.NewEventWithTime(l.tag, t, v)

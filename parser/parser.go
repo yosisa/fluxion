@@ -27,7 +27,7 @@ var jsonParser = ParserFunc(func(s string) (map[string]interface{}, error) {
 	return v, err
 })
 
-func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
+func Get(format, timeFormat, tz string) (p Parser, tp TimeParser, err error) {
 	switch format {
 	case "":
 		p = nopParser
@@ -41,9 +41,16 @@ func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
 	default:
 		p, err = NewRegexpParser(format)
 	}
+	if err != nil {
+		return
+	}
 
-	if err == nil && timeFormat != "" {
-		tp, err = NewTimeParser(timeFormat, tz)
+	switch timeFormat {
+	case "":
+	case "unix", "unixtime":
+		tp, err = NewUnixTimeParser(tz)
+	default:
+		tp, err = NewStrTimeParser(timeFormat, tz)
 	}
 	return
 }
