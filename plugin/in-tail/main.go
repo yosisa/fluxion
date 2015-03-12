@@ -202,7 +202,6 @@ func (l *LineParser) makeEvent(v map[string]interface{}) *message.Event {
 		if val, ok := v[l.timeKey]; ok {
 			t, err := l.timeParser.Parse(val)
 			if err == nil {
-				delete(v, l.timeKey)
 				return message.NewEventWithTime(l.tag, t, v)
 			}
 			l.env.Log.Warningf("Time parser failed: %v", err)
