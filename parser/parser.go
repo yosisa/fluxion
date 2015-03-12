@@ -1,5 +1,7 @@
 package parser
 
+import "encoding/json"
+
 const (
 	nginx     = `(?P<remote>[^ ]*) (?P<host>[^ ]*) (?P<user>[^ ]*) \[(?P<time>[^]]*)\] "(?P<method>\S+)(?: +(?P<path>[^" ]*) +\S+)?" (?P<code>\d*) (?P<size>\d*)(?: "(?P<referer>[^"]*)" "(?P<agent>[^"]*)")?.*`
 	nginxTime = "02/Jan/2006:15:04:05 -0700"
@@ -19,12 +21,20 @@ var nopParser = ParserFunc(func(s string) (map[string]interface{}, error) {
 	return map[string]interface{}{"message": s}, nil
 })
 
+var jsonParser = ParserFunc(func(s string) (map[string]interface{}, error) {
+	var v map[string]interface{}
+	err := json.Unmarshal([]byte(s), &v)
+	return v, err
+})
+
 func Get(format, timeFormat, tz string) (p Parser, tp *TimeParser, err error) {
 	switch format {
 	case "":
 		p = nopParser
 	case "ltsv":
 		p = &LTSVParser{}
+	case "json":
+		p = jsonParser
 	case "nginx":
 		p, err = NewRegexpParser(nginx)
 		timeFormat = nginxTime

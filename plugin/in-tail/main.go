@@ -23,6 +23,8 @@ type Config struct {
 	TimeKey      string `toml:"time_key"`
 	TimeFormat   string `toml:"time_format"`
 	TimeZone     string `toml:"timezone"`
+	RecordKey    string `toml:"record_key"`
+	RecordFormat string `toml:"record_format"`
 	ReadFromHead bool   `toml:"read_from_head"`
 }
 
@@ -31,6 +33,7 @@ type TailInput struct {
 	conf       *Config
 	parser     parser.Parser
 	timeParser *parser.TimeParser
+	rparser    parser.Parser
 	pf         *PositionFile
 	fsw        *fsnotify.Watcher
 	watchers   map[string]*Watcher
@@ -49,6 +52,11 @@ func (i *TailInput) Init(env *plugin.Env) (err error) {
 	i.parser, i.timeParser, err = parser.Get(i.conf.Format, i.conf.TimeFormat, i.conf.TimeZone)
 	if err != nil {
 		return
+	}
+	if i.conf.RecordKey != "" {
+		if i.rparser, _, err = parser.Get(i.conf.RecordFormat, "", ""); err != nil {
+			return
+		}
 	}
 
 	pf, ok := posFiles[i.conf.PosFile]
@@ -133,6 +141,8 @@ func (i *TailInput) pathWatcher() {
 					parser:     i.parser,
 					timeParser: i.timeParser,
 					timeKey:    i.conf.TimeKey,
+					rkey:       i.conf.RecordKey,
+					rparser:    i.rparser,
 				}
 				i.watchers[f] = NewWatcher(pe, i.env, lp.parseLine, i.fsw)
 				i.fsw.Add(f)
@@ -162,6 +172,8 @@ type LineParser struct {
 	parser     parser.Parser
 	timeParser *parser.TimeParser
 	timeKey    string
+	rkey       string
+	rparser    parser.Parser
 }
 
 func (l *LineParser) parseLine(b []byte) {
@@ -171,25 +183,34 @@ func (l *LineParser) parseLine(b []byte) {
 		l.env.Log.Warningf("Line parser failed: %v, use default parser: %s", err, line)
 		v, _ = parser.DefaultParser.Parse(line)
 	}
+	l.env.Emit(l.makeEvent(v))
+}
 
-	var ev *message.Event
+func (l *LineParser) makeEvent(v map[string]interface{}) *message.Event {
+	if l.rkey != "" && l.rparser != nil {
+		if s, ok := v[l.rkey].(string); ok {
+			if record, err := l.rparser.Parse(s); err == nil {
+				v = record
+			} else {
+				l.env.Log.Warningf("Record parser failed: %v", err)
+			}
+		} else {
+			l.env.Log.Warning("Record key configured, but not exists")
+		}
+	}
 	if l.timeKey != "" && l.timeParser != nil {
 		if s, ok := v[l.timeKey].(string); ok {
 			t, err := l.timeParser.Parse(s)
 			if err == nil {
 				delete(v, l.timeKey)
-				ev = message.NewEventWithTime(l.tag, t, v)
-			} else {
-				l.env.Log.Warningf("Time parser failed: %v", err)
+				return message.NewEventWithTime(l.tag, t, v)
 			}
+			l.env.Log.Warningf("Time parser failed: %v", err)
 		} else {
 			l.env.Log.Warning("Time key configured, but not exists")
 		}
 	}
-	if ev == nil {
-		ev = message.NewEvent(l.tag, v)
-	}
-	l.env.Emit(ev)
+	return message.NewEvent(l.tag, v)
 }
 
 type TailHandler func([]byte)
