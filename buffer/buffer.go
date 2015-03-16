@@ -119,6 +119,7 @@ func (m *Memory) notify() {
 
 func (m *Memory) pop() {
 	var attempts int
+	var chunk *MemoryChunk
 	tick := time.Tick(m.flushInterval)
 	for {
 		select {
@@ -131,28 +132,36 @@ func (m *Memory) pop() {
 		case <-tick:
 		}
 
-		m.m.Lock()
-		e := m.chunks.Back()
-		if e == nil {
-			m.m.Unlock()
-			continue
+		if chunk == nil {
+			if chunk = m.popChunk(); chunk == nil {
+				continue
+			}
 		}
 
-		chunk := e.Value.(*MemoryChunk)
 		n, err := m.handler.Write(chunk.Items)
 		if err != nil {
-			copy(chunk.Items, chunk.Items[n:])
+			n = copy(chunk.Items, chunk.Items[n:])
+			chunk.Items = chunk.Items[:n]
 			tick = time.Tick(backoff(m.retryInterval, attempts, m.maxRetryInterval))
 			attempts++
 		} else {
-			m.chunks.Remove(e)
+			chunk = nil
 			if attempts > 0 {
 				attempts = 0
 				tick = time.Tick(m.flushInterval)
 			}
 		}
-		m.m.Unlock()
 	}
+}
+
+func (m *Memory) popChunk() *MemoryChunk {
+	m.m.Lock()
+	defer m.m.Unlock()
+	e := m.chunks.Back()
+	if e == nil {
+		return nil
+	}
+	return m.chunks.Remove(e).(*MemoryChunk)
 }
 
 func backoff(d time.Duration, count int, max time.Duration) time.Duration {
