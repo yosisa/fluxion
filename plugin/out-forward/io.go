@@ -4,7 +4,11 @@ import (
 	"errors"
 	"io"
 	"math/rand"
+	"net"
+	"time"
 )
+
+const writeTimeout = 15 * time.Second
 
 type ConnectFunc func() (io.Writer, error)
 
@@ -26,6 +30,9 @@ func (w *AutoConnectWriter) Write(b []byte) (int, error) {
 		w.w = writer
 	}
 
+	if nc, ok := w.w.(net.Conn); ok {
+		nc.SetWriteDeadline(time.Now().Add(writeTimeout))
+	}
 	n, err := w.w.Write(b)
 	if err != nil {
 		if closer, ok := w.w.(io.Closer); ok {

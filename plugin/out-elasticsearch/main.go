@@ -14,6 +14,8 @@ import (
 	"github.com/yosisa/fluxion/plugin"
 )
 
+const defaultTimeout = 15 * time.Second
+
 type Config struct {
 	URI                string `toml:"uri"`
 	IndexName          string `toml:"index_name"`
@@ -48,12 +50,12 @@ func (o *ElasticsearchOutput) Init(env *plugin.Env) error {
 	if o.conf.LogstashDateFormat == "" {
 		o.conf.LogstashDateFormat = "2006.01.02"
 	}
+	o.client = &http.Client{Timeout: defaultTimeout}
 	o.utc, _ = time.LoadLocation("")
 	return nil
 }
 
 func (o *ElasticsearchOutput) Start() error {
-	o.client = &http.Client{}
 	return nil
 }
 
