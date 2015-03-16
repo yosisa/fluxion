@@ -3,9 +3,10 @@ package buffer
 import (
 	"container/list"
 	"fmt"
-	"math"
 	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff"
 )
 
 type StringItem string
@@ -118,38 +119,38 @@ func (m *Memory) notify() {
 }
 
 func (m *Memory) pop() {
-	var attempts int
-	var chunk *MemoryChunk
 	tick := time.Tick(m.flushInterval)
 	for {
 		select {
 		case <-m.eventCh:
 			if m.closed {
 				return
-			} else if attempts > 0 {
-				continue
 			}
 		case <-tick:
 		}
 
+		chunk := m.popChunk()
 		if chunk == nil {
-			if chunk = m.popChunk(); chunk == nil {
-				continue
-			}
+			continue
 		}
 
-		n, err := m.handler.Write(chunk.Items)
-		if err != nil {
+		bt := backOffTick(m.retryInterval, m.maxRetryInterval)
+		for {
+			select {
+			case <-bt.C:
+			case <-m.eventCh:
+				if m.closed {
+					return
+				}
+			}
+
+			n, err := m.handler.Write(chunk.Items)
+			if err == nil {
+				bt.Stop()
+				break
+			}
 			n = copy(chunk.Items, chunk.Items[n:])
 			chunk.Items = chunk.Items[:n]
-			tick = time.Tick(backoff(m.retryInterval, attempts, m.maxRetryInterval))
-			attempts++
-		} else {
-			chunk = nil
-			if attempts > 0 {
-				attempts = 0
-				tick = time.Tick(m.flushInterval)
-			}
 		}
 	}
 }
@@ -164,10 +165,10 @@ func (m *Memory) popChunk() *MemoryChunk {
 	return m.chunks.Remove(e).(*MemoryChunk)
 }
 
-func backoff(d time.Duration, count int, max time.Duration) time.Duration {
-	r := d * time.Duration(math.Exp2(float64(count)))
-	if r > max {
-		return max
-	}
-	return r
+func backOffTick(initial, max time.Duration) *backoff.Ticker {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = initial
+	b.MaxInterval = max
+	b.MaxElapsedTime = 0 // infinite
+	return backoff.NewTicker(b)
 }
