@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -105,7 +106,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 					i.env.Log.Errorf("Time decode error: %v, skipping", err)
 					continue
 				}
-				r := message.NewEventWithTime(tag, t, parseValue(v2[1]))
+				r := message.NewEventWithTime(tag, t, v2[1].(map[string]interface{}))
 				i.env.Emit(r)
 			}
 		case 3:
@@ -114,7 +115,7 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 				i.env.Log.Errorf("Time decode error: %v, skipping", err)
 				continue
 			}
-			r := message.NewEventWithTime(tag, t, parseValue(v[2]))
+			r := message.NewEventWithTime(tag, t, v[2].(map[string]interface{}))
 			i.env.Emit(r)
 		}
 	}
@@ -162,16 +163,12 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	return
 }
 
-func parseValue(v interface{}) map[string]interface{} {
-	r := make(map[string]interface{})
-	for key, val := range v.(map[interface{}]interface{}) {
-		r[key.(string)] = val
-	}
-	return r
-}
-
 func main() {
 	plugin.New("in-forward", func() plugin.Plugin {
 		return &ForwardInput{}
 	}).Run()
+}
+
+func init() {
+	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 }
