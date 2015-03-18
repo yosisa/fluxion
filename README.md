@@ -9,7 +9,7 @@ We decided to develop fluxion to achieve following goals:
 * Fast!
 * Small memory footprint
 * Easy to use
-* Easy to develop
+* Fun to develop
 
 ## Build
 ```bash
