@@ -15,7 +15,7 @@ bundles/fluxion-%: plugin/%/*.go $(PKG_SOURCES)
 deps:
 	go get -t ./...
 
-test:
+test: deps
 	go test ./...
 
 clean:
