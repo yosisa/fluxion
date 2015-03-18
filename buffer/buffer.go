@@ -53,8 +53,8 @@ type Memory struct {
 	retryInterval    time.Duration
 	maxRetryInterval time.Duration
 	handler          Handler
-	eventCh          chan bool
-	closed           bool
+	awake            chan struct{}
+	closed           chan struct{}
 	m                sync.Mutex
 }
 
@@ -67,7 +67,8 @@ func NewMemory(opts *Options, h Handler) *Memory {
 		retryInterval:    time.Duration(opts.RetryInterval),
 		maxRetryInterval: time.Duration(opts.MaxRetryInterval),
 		handler:          h,
-		eventCh:          make(chan bool),
+		awake:            make(chan struct{}, 1),
+		closed:           make(chan struct{}),
 	}
 	go m.pop()
 	return m
@@ -101,8 +102,7 @@ func (m *Memory) Push(s Sizer) error {
 }
 
 func (m *Memory) Close() {
-	m.closed = true
-	close(m.eventCh)
+	close(m.closed)
 	m.m.Lock()
 	defer m.m.Unlock()
 	for e := m.chunks.Front(); e != nil; e = e.Next() {
@@ -113,7 +113,7 @@ func (m *Memory) Close() {
 
 func (m *Memory) notify() {
 	select {
-	case m.eventCh <- true:
+	case m.awake <- struct{}{}:
 	default:
 	}
 }
@@ -122,27 +122,26 @@ func (m *Memory) pop() {
 	tick := time.Tick(m.flushInterval)
 	for {
 		select {
-		case <-m.eventCh:
-			if m.closed {
-				return
-			}
 		case <-tick:
+		case <-m.awake:
+		case <-m.closed:
+			return
 		}
 
-		chunk := m.popChunk()
+		chunk, n := m.popChunk()
 		if chunk == nil {
 			continue
+		}
+		if n > 1 {
+			m.notify()
 		}
 
 		bt := backOffTick(m.retryInterval, m.maxRetryInterval)
 		for {
 			select {
 			case <-bt.C:
-			case <-m.eventCh:
-				if m.closed {
-					return
-				}
-				continue
+			case <-m.closed:
+				return
 			}
 
 			n, err := m.handler.Write(chunk.Items)
@@ -158,14 +157,15 @@ func (m *Memory) pop() {
 	}
 }
 
-func (m *Memory) popChunk() *MemoryChunk {
+func (m *Memory) popChunk() (*MemoryChunk, int) {
 	m.m.Lock()
 	defer m.m.Unlock()
 	e := m.chunks.Back()
 	if e == nil {
-		return nil
+		return nil, 0
 	}
-	return m.chunks.Remove(e).(*MemoryChunk)
+	c := m.chunks.Remove(e).(*MemoryChunk)
+	return c, m.chunks.Len()
 }
 
 func backOffTick(initial, max time.Duration) *backoff.Ticker {
