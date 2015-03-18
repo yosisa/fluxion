@@ -150,8 +150,10 @@ func (m *Memory) pop() {
 				bt.Stop()
 				break
 			}
-			n = copy(chunk.Items, chunk.Items[n:])
-			chunk.Items = chunk.Items[:n]
+			if n > 0 {
+				n = copy(chunk.Items, chunk.Items[n:])
+				chunk.Items = chunk.Items[:n]
+			}
 		}
 	}
 }
