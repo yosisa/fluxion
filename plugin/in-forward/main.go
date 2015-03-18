@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -75,8 +76,8 @@ func (i *ForwardInput) accept() {
 	}
 }
 
-func (i *ForwardInput) handleConnection(conn net.Conn) {
-	dec := codec.NewDecoder(conn, mh)
+func (i *ForwardInput) handleConnection(rw io.ReadWriter) {
+	dec := codec.NewDecoder(rw, mh)
 	for {
 		var v []interface{}
 		err := dec.Decode(&v)
@@ -90,32 +91,64 @@ func (i *ForwardInput) handleConnection(conn net.Conn) {
 		tag := v[0].(string)
 		switch len(v) {
 		case 2:
-			dec2 := codec.NewDecoderBytes([]byte(v[1].(string)), mh)
-			for {
-				var v2 []interface{}
-				if err := dec2.Decode(&v2); err != nil {
-					if err != io.EOF {
-						i.env.Log.Warning(err)
-					}
-					break
-				}
-
-				t, err := parseTime(v2[0])
-				if err != nil {
-					i.env.Log.Errorf("Time decode error: %v, skipping", err)
-					continue
-				}
-				r := message.NewEventWithTime(tag, t, parseValue(v2[1]))
-				i.env.Emit(r)
-			}
+			i.parseNestedEncoding(tag, v)
 		case 3:
-			t, err := parseTime(v[1])
-			if err != nil {
-				i.env.Log.Errorf("Time decode error: %v, skipping", err)
-				continue
+			// 1 is timeBinaryVersion defined in time.go.
+			// In msgpack spec, 0x01 means positive fixint, thus
+			// it's never appeared in this context.
+			if s, ok := v[1].(string); ok && s[0] != 1 {
+				i.parseNestedEncoding(tag, v)
+				i.handleOption(rw, v[2].(map[string]interface{}))
+			} else {
+				i.parseFlatEncoding(tag, v)
 			}
-			r := message.NewEventWithTime(tag, t, parseValue(v[2]))
-			i.env.Emit(r)
+		case 4:
+			i.parseFlatEncoding(tag, v)
+			i.handleOption(rw, v[3].(map[string]interface{}))
+		}
+	}
+}
+
+func (i *ForwardInput) parseNestedEncoding(tag string, v []interface{}) {
+	dec := codec.NewDecoderBytes([]byte(v[1].(string)), mh)
+	for {
+		var v2 []interface{}
+		if err := dec.Decode(&v2); err != nil {
+			if err != io.EOF {
+				i.env.Log.Warning(err)
+			}
+			return
+		}
+
+		t, err := parseTime(v2[0])
+		if err != nil {
+			i.env.Log.Errorf("Time decode error: %v, skipping", err)
+			continue
+		}
+		r := message.NewEventWithTime(tag, t, v2[1].(map[string]interface{}))
+		i.env.Emit(r)
+	}
+}
+
+func (i *ForwardInput) parseFlatEncoding(tag string, v []interface{}) {
+	t, err := parseTime(v[1])
+	if err != nil {
+		i.env.Log.Errorf("Time decode error: %v, skipping", err)
+		return
+	}
+	r := message.NewEventWithTime(tag, t, v[2].(map[string]interface{}))
+	i.env.Emit(r)
+}
+
+func (i *ForwardInput) handleOption(w io.Writer, opts map[string]interface{}) {
+	if id, ok := opts["chunk"]; ok {
+		resp := map[string]interface{}{"ack": id}
+		var b []byte
+		if err := codec.NewEncoderBytes(&b, mh).Encode(resp); err != nil {
+			i.env.Log.Errorf("Failed to encode response: %v", err)
+		}
+		if _, err := w.Write(b); err != nil {
+			i.env.Log.Errorf("Failed to respond ack: chunk id %v, err: %v", id, err)
 		}
 	}
 }
@@ -162,16 +195,12 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	return
 }
 
-func parseValue(v interface{}) map[string]interface{} {
-	r := make(map[string]interface{})
-	for key, val := range v.(map[interface{}]interface{}) {
-		r[key.(string)] = val
-	}
-	return r
-}
-
 func main() {
 	plugin.New("in-forward", func() plugin.Plugin {
 		return &ForwardInput{}
 	}).Run()
+}
+
+func init() {
+	mh.MapType = reflect.TypeOf(map[string]interface{}(nil))
 }
