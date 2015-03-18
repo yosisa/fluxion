@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -12,22 +13,51 @@ import (
 	"github.com/yosisa/fluxion/plugin"
 )
 
-type Config struct {
-	MinWeight  int  `toml:"min_weight"`
-	Compatible bool `toml:"compatible"`
+type CompatibleMode int
 
-	Servers []struct {
+const (
+	CompatibleDisable CompatibleMode = iota
+	CompatibleLegacy
+	CompatibleExtend
+)
+
+func (m *CompatibleMode) UnmarshalText(b []byte) (err error) {
+	switch string(b) {
+	case "", "disable":
+		*m = CompatibleDisable
+	case "legacy":
+		*m = CompatibleLegacy
+	case "extend":
+		*m = CompatibleExtend
+	default:
+		err = errors.New("CompatibleMode must be disable, legacy or extend")
+	}
+	return
+}
+
+type sequence uint64
+
+func (i *sequence) Next() uint64 {
+	return atomic.AddUint64((*uint64)(i), 1)
+}
+
+var mh *codec.MsgpackHandle
+
+type Config struct {
+	MinWeight  int             `toml:"min_weight"`
+	Compatible CompatibleMode  `toml:"compatible"`
+	AckTimeout buffer.Duration `toml:"ack_timeout"`
+	Servers    []struct {
 		Server string `toml:"server"`
 		Weight int    `toml:"weight"`
 	} `toml:"servers"`
 }
 
 type ForwardOutput struct {
-	env  *plugin.Env
-	conf *Config
-	conn net.Conn
-	w    io.Writer
-	mh   *codec.MsgpackHandle
+	env        *plugin.Env
+	conf       *Config
+	w          io.Writer
+	ackEnabled bool
 }
 
 func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
@@ -39,10 +69,18 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	if o.conf.MinWeight == 0 {
 		o.conf.MinWeight = 5
 	}
-	if o.conf.Compatible {
-		o.mh = &codec.MsgpackHandle{}
+	if o.conf.Compatible == CompatibleDisable {
+		mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}
 	} else {
-		o.mh = &codec.MsgpackHandle{RawToString: true, WriteExt: true}
+		mh = &codec.MsgpackHandle{}
+	}
+	o.ackEnabled = (o.conf.Compatible == CompatibleDisable && o.conf.AckTimeout > 0) ||
+		o.conf.Compatible == CompatibleExtend
+
+	var seq sequencer
+	if o.ackEnabled {
+		var s sequence
+		seq = &s
 	}
 
 	if len(o.conf.Servers) == 0 {
@@ -51,14 +89,14 @@ func (o *ForwardOutput) Init(env *plugin.Env) (err error) {
 	w := NewRoundRobinWriter(o.conf.MinWeight)
 	for _, v := range o.conf.Servers {
 		f := func(s string) ConnectFunc {
-			return func() (io.Writer, error) {
+			return func() (net.Conn, error) {
 				return net.DialTimeout("tcp", s, 5*time.Second)
 			}
 		}(v.Server)
 		if v.Weight == 0 {
 			v.Weight = 60
 		}
-		w.Add(NewAutoConnectWriter(f), v.Weight)
+		w.Add(NewAutoConnectWriter(f, seq, time.Duration(o.conf.AckTimeout)), v.Weight)
 	}
 	go func() {
 		for err := range w.ErrorC {
@@ -73,16 +111,29 @@ func (o *ForwardOutput) Start() (err error) {
 	return nil
 }
 
+func encode(v interface{}) (b []byte, err error) {
+	err = codec.NewEncoderBytes(&b, mh).Encode(v)
+	return
+}
+
+func decode(b []byte, v interface{}) error {
+	return codec.NewDecoderBytes(b, mh).Decode(v)
+}
+
 func (o *ForwardOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
-	var b []byte
 	var v []interface{}
-	if o.conf.Compatible {
-		v = []interface{}{ev.Tag, ev.Time.Unix(), ev.Record}
-	} else {
+	if o.conf.Compatible == CompatibleDisable {
 		v = []interface{}{ev.Tag, ev.Time, ev.Record}
+	} else {
+		v = []interface{}{ev.Tag, ev.Time.Unix(), ev.Record}
 	}
-	if err := codec.NewEncoderBytes(&b, o.mh).Encode(v); err != nil {
+	b, err := encode(v)
+	if err != nil {
 		return nil, err
+	}
+	if o.ackEnabled {
+		// temporary invalid msgpack data, it will be corrected before sending
+		b[0] = 0x94
 	}
 	return buffer.BytesItem(b), nil
 }

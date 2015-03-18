@@ -5,42 +5,163 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"sync"
 	"time"
 )
 
-const writeTimeout = 15 * time.Second
+const (
+	writeTimeout = 15 * time.Second
+	readTimeout  = 15 * time.Second
+	readBufSize  = 1024
+)
 
-type ConnectFunc func() (io.Writer, error)
+type sequencer interface {
+	Next() uint64
+}
+
+type ConnectFunc func() (net.Conn, error)
 
 type AutoConnectWriter struct {
-	w       io.Writer
-	connect func() (io.Writer, error)
+	c          net.Conn
+	connect    ConnectFunc
+	seq        sequencer
+	ackTimeout time.Duration
+	ackWaiters map[interface{}]chan struct{}
+	err        error
+	m          sync.RWMutex
+	closed     chan struct{}
+	closeOnce  sync.Once
 }
 
-func NewAutoConnectWriter(f ConnectFunc) *AutoConnectWriter {
-	return &AutoConnectWriter{connect: f}
+func NewAutoConnectWriter(f ConnectFunc, seq sequencer, ackTimeout time.Duration) *AutoConnectWriter {
+	return &AutoConnectWriter{
+		connect:    f,
+		seq:        seq,
+		ackTimeout: ackTimeout,
+		ackWaiters: make(map[interface{}]chan struct{}),
+	}
 }
 
-func (w *AutoConnectWriter) Write(b []byte) (int, error) {
-	if w.w == nil {
-		writer, err := w.connect()
-		if err != nil {
-			return 0, err
-		}
-		w.w = writer
-	}
-
-	if nc, ok := w.w.(net.Conn); ok {
-		nc.SetWriteDeadline(time.Now().Add(writeTimeout))
-	}
-	n, err := w.w.Write(b)
+func (w *AutoConnectWriter) init() error {
+	c, err := w.connect()
 	if err != nil {
-		if closer, ok := w.w.(io.Closer); ok {
-			closer.Close()
-		}
-		w.w = nil
+		return err
 	}
-	return n, err
+	w.c = c
+	w.closed = make(chan struct{})
+	w.closeOnce = sync.Once{}
+	go w.reader()
+	return nil
+}
+
+func (w *AutoConnectWriter) Write(b []byte) (n int, err error) {
+	if err = w.readError(); err != nil {
+		w.setError(nil)
+		w.Close()
+		return
+	}
+	if w.c == nil {
+		if err = w.init(); err != nil {
+			return
+		}
+	}
+
+	if w.seq != nil {
+		var option []byte
+		id := w.seq.Next()
+		if option, err = encode(map[string]interface{}{"chunk": id}); err != nil {
+			return
+		}
+		b = append(b, option...)
+		if w.ackTimeout > 0 {
+			waiter := w.setAckWaiter(id)
+			defer func() {
+				if err != nil {
+					return
+				}
+				select {
+				case <-waiter:
+					return
+				case <-w.closed:
+					err = errors.New("Unexpected close")
+				case <-time.After(w.ackTimeout):
+					err = errors.New("ack not returned")
+					w.Close()
+				}
+				w.unsetAckWaiter(id)
+				n = 0
+			}()
+		}
+	}
+
+	w.c.SetWriteDeadline(time.Now().Add(writeTimeout))
+	if n, err = w.c.Write(b); err != nil {
+		w.Close()
+	}
+	return
+}
+
+func (w *AutoConnectWriter) reader() {
+	b := make([]byte, readBufSize)
+	for {
+		n, err := w.c.Read(b)
+		if err != nil {
+			w.setError(err)
+			return
+		}
+		var ack struct {
+			Ack uint64 `json:"ack"`
+		}
+		if err = decode(b[:n], &ack); err != nil {
+			w.setError(err)
+			return
+		}
+		w.notifyAck(ack.Ack)
+		b = b[:readBufSize]
+	}
+}
+
+func (w *AutoConnectWriter) setAckWaiter(id interface{}) chan struct{} {
+	w.m.Lock()
+	defer w.m.Unlock()
+	c := make(chan struct{})
+	w.ackWaiters[id] = c
+	return c
+}
+
+func (w *AutoConnectWriter) unsetAckWaiter(id interface{}) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	delete(w.ackWaiters, id)
+}
+
+func (w *AutoConnectWriter) notifyAck(id interface{}) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	if c, ok := w.ackWaiters[id]; ok {
+		close(c)
+		delete(w.ackWaiters, id)
+	}
+}
+
+func (w *AutoConnectWriter) setError(err error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	w.err = err
+}
+
+func (w *AutoConnectWriter) readError() error {
+	w.m.RLock()
+	defer w.m.RUnlock()
+	return w.err
+}
+
+func (w *AutoConnectWriter) Close() {
+	w.closeOnce.Do(func() {
+		w.c.Close()
+		close(w.closed)
+		w.c = nil
+	})
 }
 
 type weightedWriter struct {
