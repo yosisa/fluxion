@@ -142,6 +142,7 @@ func (m *Memory) pop() {
 				if m.closed {
 					return
 				}
+				continue
 			}
 
 			n, err := m.handler.Write(chunk.Items)
