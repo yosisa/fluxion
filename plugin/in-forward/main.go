@@ -76,8 +76,8 @@ func (i *ForwardInput) accept() {
 	}
 }
 
-func (i *ForwardInput) handleConnection(conn net.Conn) {
-	dec := codec.NewDecoder(conn, mh)
+func (i *ForwardInput) handleConnection(r io.Reader) {
+	dec := codec.NewDecoder(r, mh)
 	for {
 		var v []interface{}
 		err := dec.Decode(&v)
