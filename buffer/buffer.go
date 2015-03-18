@@ -103,12 +103,6 @@ func (m *Memory) Push(s Sizer) error {
 
 func (m *Memory) Close() {
 	close(m.closed)
-	m.m.Lock()
-	defer m.m.Unlock()
-	for e := m.chunks.Front(); e != nil; e = e.Next() {
-		m.handler.Write(e.Value.(*MemoryChunk).Items)
-	}
-	m.chunks.Init()
 }
 
 func (m *Memory) notify() {
@@ -125,6 +119,7 @@ func (m *Memory) pop() {
 		case <-tick:
 		case <-m.awake:
 		case <-m.closed:
+			m.flushChunks()
 			return
 		}
 
@@ -166,6 +161,16 @@ func (m *Memory) popChunk() (*MemoryChunk, int) {
 	}
 	c := m.chunks.Remove(e).(*MemoryChunk)
 	return c, m.chunks.Len()
+}
+
+func (m *Memory) flushChunks() {
+	for {
+		chunk, _ := m.popChunk()
+		if chunk == nil {
+			return
+		}
+		m.handler.Write(chunk.Items)
+	}
 }
 
 func backOffTick(initial, max time.Duration) *backoff.Ticker {
