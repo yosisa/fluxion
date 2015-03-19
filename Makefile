@@ -4,6 +4,9 @@ PLUGINS := $(shell find plugin -type f -name main.go | cut -d/ -f2)
 
 all: deps bundles/fluxion plugins
 
+monolithic:
+	go build -o bundles/fluxion -tags=monolithic
+
 plugins: $(addprefix bundles/fluxion-,$(PLUGINS))
 
 bundles/fluxion: $(SOURCES)
@@ -21,4 +24,4 @@ test: deps
 clean:
 	-rm -r bundles
 
-.PHONY: all plugins deps test clean
+.PHONY: all monolithic plugins deps test clean
