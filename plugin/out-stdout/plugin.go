@@ -1,4 +1,4 @@
-package main
+package out_stdout
 
 import (
 	"bytes"
@@ -63,8 +63,6 @@ func (o *StdoutOutput) Close() error {
 	return nil
 }
 
-func main() {
-	plugin.New("out-stdout", func() plugin.Plugin {
-		return &StdoutOutput{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &StdoutOutput{}
 }

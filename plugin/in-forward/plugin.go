@@ -1,4 +1,4 @@
-package main
+package in_forward
 
 import (
 	"fmt"
@@ -195,10 +195,8 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	return
 }
 
-func main() {
-	plugin.New("in-forward", func() plugin.Plugin {
-		return &ForwardInput{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &ForwardInput{}
 }
 
 func init() {

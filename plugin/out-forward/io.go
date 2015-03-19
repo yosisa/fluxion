@@ -1,4 +1,4 @@
-package main
+package out_forward
 
 import (
 	"errors"

@@ -31,6 +31,7 @@ type Engine struct {
 	bufs    map[string]*buffer.Options
 	unitID  int32
 	log     *log.Logger
+	stopped chan struct{}
 }
 
 func New() *Engine {
@@ -44,6 +45,7 @@ func New() *Engine {
 		bufs: map[string]*buffer.Options{
 			"default": defaultBuf,
 		},
+		stopped: make(chan struct{}),
 	}
 	e.log = &log.Logger{
 		Name:     "engine",
@@ -160,7 +162,7 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) Wait() {
-	e.pm.Wait()
+	<-e.stopped
 }
 
 func (e *Engine) Stop() {
@@ -168,6 +170,8 @@ func (e *Engine) Stop() {
 	e.stopPlugins("in-")
 	e.stopPlugins("filter-")
 	e.stopPlugins("out-")
+	e.pm.Wait()
+	close(e.stopped)
 }
 
 func (e *Engine) stopPlugins(prefix string) {

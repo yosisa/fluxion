@@ -1,4 +1,4 @@
-package main
+package in_tail
 
 import (
 	"io"
@@ -333,8 +333,6 @@ func (w *Watcher) notify() {
 	}
 }
 
-func main() {
-	plugin.New("in-tail", func() plugin.Plugin {
-		return &TailInput{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &TailInput{}
 }
