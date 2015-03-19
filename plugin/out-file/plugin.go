@@ -1,4 +1,4 @@
-package main
+package out_file
 
 import (
 	"bytes"
@@ -110,8 +110,6 @@ func inode(path string) (ino uint64, err error) {
 	return
 }
 
-func main() {
-	plugin.New("out-file", func() plugin.Plugin {
-		return &OutFile{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &OutFile{}
 }

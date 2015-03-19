@@ -1,4 +1,4 @@
-package main
+package in_tail
 
 import (
 	"bufio"

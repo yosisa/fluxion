@@ -1,4 +1,4 @@
-package main
+package filter_js
 
 import (
 	"io/ioutil"
@@ -108,8 +108,6 @@ func (f *JSFilter) Close() error {
 	return nil
 }
 
-func main() {
-	plugin.New("filter-js", func() plugin.Plugin {
-		return &JSFilter{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &JSFilter{}
 }

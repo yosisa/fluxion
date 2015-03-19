@@ -1,4 +1,4 @@
-package main
+package in_forward
 
 import (
 	"bytes"

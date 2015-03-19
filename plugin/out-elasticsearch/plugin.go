@@ -1,4 +1,4 @@
-package main
+package out_elasticsearch
 
 import (
 	"bytes"
@@ -125,8 +125,6 @@ func (o *ElasticsearchOutput) Close() error {
 	return nil
 }
 
-func main() {
-	plugin.New("out-elasticsearch", func() plugin.Plugin {
-		return &ElasticsearchOutput{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &ElasticsearchOutput{}
 }

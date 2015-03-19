@@ -1,4 +1,4 @@
-package main
+package out_forward
 
 import (
 	"errors"
@@ -152,8 +152,6 @@ func (o *ForwardOutput) Close() error {
 	return nil
 }
 
-func main() {
-	plugin.New("out-forward", func() plugin.Plugin {
-		return &ForwardOutput{}
-	}).Run()
+func Factory() plugin.Plugin {
+	return &ForwardOutput{}
 }
