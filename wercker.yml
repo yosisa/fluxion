@@ -15,14 +15,9 @@ build:
           for d in $(git ls-files | grep '_test.go$' | sed -E 's,/?[^/]*$,,' | uniq); do go test -covermode=count -coverprofile=$d/profile.tmp ./$d && tail -n +2 $d/profile.tmp >> profile.cov; done
           goveralls -coverprofile=profile.cov -service=wercker.com -repotoken $COVERALLS_TOKEN
     - script:
-        name: gox fluxion
+        name: gox
         code: |
-          gox -os="linux darwin" -arch="amd64" -output "${WERCKER_OUTPUT_DIR}/pkg/fluxion_{{.OS}}_{{.Arch}}/{{.Dir}}"
-    - script:
-        name: gox fluxion plugins
-        code: |
-          cd plugin
-          gox -os="linux darwin" -arch="amd64" -output "${WERCKER_OUTPUT_DIR}/pkg/fluxion_{{.OS}}_{{.Arch}}/fluxion-{{.Dir}}" ./...
+          gox -tags=monolithic -os="linux darwin" -arch="amd64" -output "${WERCKER_OUTPUT_DIR}/pkg/fluxion_{{.OS}}_{{.Arch}}/{{.Dir}}"
     - tcnksm/zip:
         input: $WERCKER_OUTPUT_DIR/pkg
         output: $WERCKER_OUTPUT_DIR/dist
