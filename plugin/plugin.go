@@ -225,8 +225,10 @@ func (u *execUnit) eventLoop() {
 					u.log.Warning("Encode error: ", err)
 					continue
 				}
-				if err = buf.Push(s); err != nil {
-					u.log.Warning("Buffering error: ", err)
+				if s != nil {
+					if err = buf.Push(s); err != nil {
+						u.log.Warning("Buffering error: ", err)
+					}
 				}
 			}
 		case message.TypStop:
