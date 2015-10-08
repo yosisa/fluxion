@@ -314,7 +314,7 @@ func (w *Watcher) Scan() error {
 	}
 
 	for {
-		line, _, err := w.r.ReadLine()
+		line, err := w.r.ReadLine()
 		if err != nil {
 			if err == io.EOF {
 				return nil

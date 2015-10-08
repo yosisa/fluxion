@@ -2,6 +2,7 @@ package in_tail
 
 import (
 	"bufio"
+	"io"
 	"os"
 )
 
@@ -10,6 +11,8 @@ type PositionReader struct {
 	r   *bufio.Reader
 	pos int64
 	pe  *PositionEntry
+	buf []byte
+	err error
 }
 
 func NewPositionReader(pe *PositionEntry) (*PositionReader, error) {
@@ -31,26 +34,54 @@ func NewPositionReader(pe *PositionEntry) (*PositionReader, error) {
 }
 
 // ReadLine tries to return a single line, not including the end-of-line bytes.
-// It also skip empty line. See also bufio.Reader.ReadLine.
-func (r *PositionReader) ReadLine() (line []byte, isPrefix bool, err error) {
+// It also skip empty line.
+func (r *PositionReader) ReadLine() ([]byte, error) {
 	for {
-		line, isPrefix, err = r.r.ReadLine()
-		if err != nil {
-			return
+		if r.err != nil {
+			return nil, r.readErr()
 		}
-		// If isPrefix is true, it means no the end-of-line bytes skipped.
-		// So we must not increment position for that bytes.
-		if !isPrefix {
-			r.pos++
+
+		line, err := r.r.ReadSlice('\n')
+		n := len(line)
+		if n == 0 {
+			return nil, io.EOF
 		}
-		if n := len(line); n > 0 {
-			r.pos += int64(n)
-			r.pe.SetPos(r.pos)
-			return
+		r.pos += int64(n)
+
+		if err == io.EOF {
+			r.buf = append(r.buf, line...)
+			return nil, err
 		}
+		if err == bufio.ErrBufferFull {
+			r.buf = append(r.buf, line...)
+			continue
+		}
+		r.err = err
+
+		r.pe.SetPos(r.pos)
+		if n >= 2 && line[n-2] == '\r' {
+			line = line[:n-2]
+		} else {
+			line = line[:n-1]
+		}
+
+		if len(r.buf) > 0 {
+			line = append(r.buf, line...)
+			r.buf = r.buf[:0]
+		} else if len(line) == 0 { // empty line
+			continue
+		}
+		return line, nil
 	}
 }
 
 func (r *PositionReader) Close() error {
 	return r.f.Close()
+}
+
+func (r *PositionReader) readErr() (err error) {
+	if r.err != nil {
+		err, r.err = r.err, nil
+	}
+	return
 }
