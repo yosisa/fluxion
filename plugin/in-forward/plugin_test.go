@@ -57,7 +57,7 @@ func (s *HandleConnection) SetUpTest(c *C) {
 }
 
 func (s *HandleConnection) TestFlatEncoding(c *C) {
-	t := time.Now()
+	t := time.Now().UTC()
 	s.enc.Encode([]interface{}{"flat", t, map[string]interface{}{"key": "value"}})
 	s.p.handleConnection(s.buf)
 	c.Assert(len(s.events), Equals, 1)
@@ -68,7 +68,7 @@ func (s *HandleConnection) TestFlatEncoding(c *C) {
 }
 
 func (s *HandleConnection) TestNestedEncoding(c *C) {
-	t1 := time.Now()
+	t1 := time.Now().UTC()
 	t2 := t1.Add(time.Second)
 	b := new(bytes.Buffer)
 	enc := codec.NewEncoder(b, mh)
@@ -89,7 +89,7 @@ func (s *HandleConnection) TestNestedEncoding(c *C) {
 }
 
 func (s *HandleConnection) TestExtendedFlatEncoding(c *C) {
-	t := time.Now()
+	t := time.Now().UTC()
 	opts := map[string]interface{}{"chunk": 1}
 	s.enc.Encode([]interface{}{"flat-ex", t, map[string]interface{}{"key": "value"}, opts})
 	s.p.handleConnection(s.buf)
@@ -103,7 +103,7 @@ func (s *HandleConnection) TestExtendedFlatEncoding(c *C) {
 }
 
 func (s *HandleConnection) TestExtendedNestedEncoding(c *C) {
-	t1 := time.Now()
+	t1 := time.Now().UTC()
 	t2 := t1.Add(time.Second)
 	b := new(bytes.Buffer)
 	enc := codec.NewEncoder(b, mh)
@@ -135,10 +135,12 @@ func (s *Time) TestParseTime(c *C) {
 	b, err := now.MarshalBinary()
 	c.Assert(err, IsNil)
 
+	c.Assert(isTimeFormat(b), Equals, true)
 	tt, err := parseTime(b)
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
 
+	c.Assert(isTimeFormat(string(b)), Equals, true)
 	tt, err = parseTime(string(b))
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
@@ -148,19 +150,61 @@ func (s *Time) TestParseCompatibleTime(c *C) {
 	epoch := time.Now().Unix()
 	now := time.Unix(epoch, 0)
 
+	c.Assert(isTimeFormat(int64(epoch)), Equals, true)
 	tt, err := parseTime(int64(epoch))
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
 
+	c.Assert(isTimeFormat(uint64(epoch)), Equals, true)
 	tt, err = parseTime(uint64(epoch))
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
 
+	c.Assert(isTimeFormat(float64(epoch)), Equals, true)
 	tt, err = parseTime(float64(epoch))
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
 
+	c.Assert(isTimeFormat(uint32(epoch)), Equals, true)
 	tt, err = parseTime(uint32(epoch))
 	c.Assert(err, IsNil)
 	c.Assert(tt, Equals, now)
+}
+
+func (s *Time) TestParseMsgpackTime(c *C) {
+	var b bytes.Buffer
+	h := &codec.MsgpackHandle{RawToString: true}
+
+	t32, err := time.Parse("2006/01/02 15:04", "1970/01/01 00:00")
+	c.Assert(err, IsNil)
+	t64, err := time.Parse("2006/01/02 15:04", "2106/02/08 00:00")
+	c.Assert(err, IsNil)
+	t96, err := time.Parse("2006/01/02 15:04", "2514/05/31 00:00")
+	c.Assert(err, IsNil)
+
+	err = codec.NewEncoder(&b, h).Encode(t32)
+	c.Assert(err, IsNil)
+	s32 := string(b.Bytes()[1:])
+	c.Assert(isTimeFormat(s32), Equals, true)
+	tt32, err := parseTime(s32)
+	c.Assert(err, IsNil)
+	c.Assert(tt32, Equals, t32)
+
+	b.Reset()
+	err = codec.NewEncoder(&b, h).Encode(t64)
+	c.Assert(err, IsNil)
+	s64 := string(b.Bytes()[1:])
+	c.Assert(isTimeFormat(s64), Equals, true)
+	tt64, err := parseTime(s64)
+	c.Assert(err, IsNil)
+	c.Assert(tt64, Equals, t64)
+
+	b.Reset()
+	err = codec.NewEncoder(&b, h).Encode(t96)
+	c.Assert(err, IsNil)
+	s96 := string(b.Bytes()[1:])
+	c.Assert(isTimeFormat(s96), Equals, true)
+	tt96, err := parseTime(s96)
+	c.Assert(err, IsNil)
+	c.Assert(tt96, Equals, t96)
 }

@@ -1,6 +1,7 @@
 package in_forward
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -93,14 +94,11 @@ func (i *ForwardInput) handleConnection(rw io.ReadWriter) {
 		case 2:
 			i.parseNestedEncoding(tag, v)
 		case 3:
-			// 1 is timeBinaryVersion defined in time.go.
-			// In msgpack spec, 0x01 means positive fixint, thus
-			// it's never appeared in this context.
-			if s, ok := v[1].(string); ok && s[0] != 1 {
+			if isTimeFormat(v[1]) {
+				i.parseFlatEncoding(tag, v)
+			} else {
 				i.parseNestedEncoding(tag, v)
 				i.handleOption(rw, v[2].(map[string]interface{}))
-			} else {
-				i.parseFlatEncoding(tag, v)
 			}
 		case 4:
 			i.parseFlatEncoding(tag, v)
@@ -110,7 +108,14 @@ func (i *ForwardInput) handleConnection(rw io.ReadWriter) {
 }
 
 func (i *ForwardInput) parseNestedEncoding(tag string, v []interface{}) {
-	dec := codec.NewDecoderBytes([]byte(v[1].(string)), mh)
+	var dec *codec.Decoder
+	switch typed := v[1].(type) {
+	case []byte:
+		dec = codec.NewDecoderBytes(typed, mh)
+	case string:
+		dec = codec.NewDecoderBytes([]byte(typed), mh)
+	}
+
 	for {
 		var v2 []interface{}
 		if err := dec.Decode(&v2); err != nil {
@@ -169,6 +174,28 @@ func (i *ForwardInput) heartbeatHandler() {
 	}
 }
 
+func isTimeFormat(v interface{}) bool {
+	switch typed := v.(type) {
+	case float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return true
+	case time.Time, *time.Time:
+		return true
+	case []byte:
+		return len(typed) == 15 && typed[0] == 1
+	case string:
+		switch len(typed) {
+		case 4, 8, 12:
+			return true
+		case 15:
+			// 1 is timeBinaryVersion defined in time.go.
+			// In msgpack spec, 0x01 means positive fixint, thus
+			// it's never appeared in this context.
+			return typed[0] == 1
+		}
+	}
+	return false
+}
+
 func parseTime(v interface{}) (t time.Time, err error) {
 	var n int64
 	switch typed := v.(type) {
@@ -176,7 +203,22 @@ func parseTime(v interface{}) (t time.Time, err error) {
 		err = t.UnmarshalBinary(typed)
 		return
 	case string:
-		err = t.UnmarshalBinary([]byte(typed))
+		if len(typed) == 15 && typed[0] == 1 {
+			// Binary format in Time.MarshalBinary()
+			t = t.UTC()
+			err = t.UnmarshalBinary([]byte(typed))
+		} else if len(typed) == 4 {
+			// MessagePack timestamp extension type (32-bit)
+			err = codec.NewDecoderBytes(append([]byte{0xd6, 0xff}, []byte(typed)...), mh).Decode(&t)
+		} else if len(typed) == 8 {
+			// MessagePack timestamp extension type (64-bit)
+			err = codec.NewDecoderBytes(append([]byte{0xd7, 0xff}, []byte(typed)...), mh).Decode(&t)
+		} else if len(typed) == 12 {
+			// MessagePack timestamp extension type (96-bit)
+			err = codec.NewDecoderBytes(append([]byte{0xc7, 0x0c, 0xff}, []byte(typed)...), mh).Decode(&t)
+		} else {
+			err = fmt.Errorf("unknown time string format [%s]", hex.EncodeToString([]byte(typed)))
+		}
 		return
 	case int64:
 		n = typed
@@ -185,6 +227,12 @@ func parseTime(v interface{}) (t time.Time, err error) {
 	case float64:
 		nsec := int64((typed - float64(int64(typed))) * 1e9)
 		t = time.Unix(int64(typed), nsec)
+		return
+	case time.Time:
+		t = typed
+		return
+	case *time.Time:
+		t = *typed
 		return
 	default:
 		if n, err = strconv.ParseInt(fmt.Sprintf("%v", typed), 10, 64); err != nil {
